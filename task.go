@@ -218,8 +218,21 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 		}
 
 		e.Logger.VerboseErrf(logger.Magenta, "task: %q started\n", call.Task)
-		if err := e.runDeps(ctx, t); err != nil {
-			return err
+
+		if len(t.Deps) > 0 {
+			if err := e.runDeps(ctx, t); err != nil {
+				return err
+			}
+			if len(t.Dotenv) > 0 {
+				origTask, err := e.GetTask(call)
+				if err != nil {
+					return err
+				}
+				t.Env, err = e.taskEnv(t, origTask.Env, nil, true)
+				if err != nil {
+					return err
+				}
+			}
 		}
 
 		skipFingerprinting := e.ForceAll || (!call.Indirect && e.Force)
