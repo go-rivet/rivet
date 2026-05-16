@@ -61,7 +61,8 @@ run: build
 ## test: Run all project unit tests natively with race detection
 test:
 	@echo "Running tests..."
-	gotestsum --format short-verbose -- ./... 
+#	gotestsum --format short-verbose -- ./... 
+	gotestsum --format short-verbose -- -count=1 ./... 
 
 ## test-all: Run unit tests and other integration/e2e tests
 test-all:

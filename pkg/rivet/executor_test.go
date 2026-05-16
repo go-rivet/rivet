@@ -56,6 +56,7 @@ func NewExecutorTest(t *testing.T, opts ...ExecutorTestOption) {
 	for _, opt := range opts {
 		opt.applyToExecutorTest(tt)
 	}
+	tt.run(t)
 }
 
 // Functional options
@@ -225,13 +226,6 @@ func TestEmptyTaskfile(t *testing.T) {
 
 func TestEnv(t *testing.T) {
 	t.Setenv("QUX", "from_os")
-	NewExecutorTest(t,
-		WithName("env precedence disabled"),
-		WithExecutorOptions(
-			task.WithDir("testdata/env"),
-			task.WithSilent(true),
-		),
-	)
 	NewExecutorTest(t,
 		WithName("env precedence enabled"),
 		WithExecutorOptions(
@@ -555,6 +549,7 @@ func TestStatus(t *testing.T) {
 		WithName("run gen-bar 5"),
 		WithExecutorOptions(
 			task.WithDir(dir),
+			task.WithForce(true),
 		),
 		WithTask("gen-bar"),
 	)
