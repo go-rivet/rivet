@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/puzpuzpuz/xsync/v4"
 
+	"github.com/go-rivet/rivet/internal/concurrent"
 	"github.com/go-rivet/rivet/internal/fingerprint"
 	"github.com/go-rivet/rivet/internal/fsnotifyext"
 	"github.com/go-rivet/rivet/internal/logger"
@@ -183,7 +183,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 		}
 	}()
 
-	e.watchedDirs = xsync.NewMap[string, bool]()
+	e.watchedDirs = concurrent.NewMapOf[string, bool]()
 
 	go func() {
 		// NOTE(@andreynering): New files can be created in directories

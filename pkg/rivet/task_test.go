@@ -656,7 +656,7 @@ func TestStatusVariables(t *testing.T) {
 	require.NoError(t, e.Setup())
 	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build-checksum"}))
 
-	assert.Contains(t, buff.String(), "3e464c4b03f4b65d740e1e130d4d108a")
+	assert.Contains(t, buff.String(), "0f3b0da8f6ff2e4622e01846ddbaa399386dd003f93afa87dff8623750ff9eb9")
 
 	buff.Reset()
 	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build-ts"}))
@@ -692,7 +692,7 @@ func TestCmdsVariables(t *testing.T) {
 	require.NoError(t, e.Setup())
 	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build-checksum"}))
 
-	assert.Contains(t, buff.String(), "3e464c4b03f4b65d740e1e130d4d108a")
+	assert.Contains(t, buff.String(), "0f3b0da8f6ff2e4622e01846ddbaa399386dd003f93afa87dff8623750ff9eb9")
 
 	buff.Reset()
 	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build-ts"}))

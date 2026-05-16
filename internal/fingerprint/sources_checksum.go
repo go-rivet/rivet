@@ -1,14 +1,13 @@
 package fingerprint
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/zeebo/xxh3"
 
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
@@ -94,25 +93,26 @@ func (c *ChecksumChecker) checksum(t *ast.Task) (string, error) {
 		return "", err
 	}
 
-	h := xxh3.New()
+	h := sha256.New()
 	buf := make([]byte, 128*1024)
+
 	for _, f := range sources {
-		// also sum the filename, so checksum changes for renaming a file
+		// Also sum the filename, so checksum changes when renaming a file
 		if _, err := io.CopyBuffer(h, strings.NewReader(filepath.Base(f)), buf); err != nil {
 			return "", err
 		}
-		f, err := os.Open(f)
+		file, err := os.Open(f)
 		if err != nil {
 			return "", err
 		}
-		if _, err = io.CopyBuffer(h, f, buf); err != nil {
+		if _, err = io.CopyBuffer(h, file, buf); err != nil {
+			_ = file.Close() // Ensure descriptor is freed if copying fails
 			return "", err
 		}
-		_ = f.Close()
+		_ = file.Close()
 	}
 
-	hash := h.Sum128()
-	return fmt.Sprintf("%x%x", hash.Hi, hash.Lo), nil
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 func (checker *ChecksumChecker) checksumFilePath(t *ast.Task) string {

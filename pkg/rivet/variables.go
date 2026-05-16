@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/joho/godotenv"
-
 	"github.com/go-rivet/rivet/internal/deepcopy"
 	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/execext"
@@ -90,7 +88,7 @@ func (e *Executor) taskEnv(t *ast.Task, origTaskEnv *ast.Vars, cache *templater.
 			if _, err := os.Stat(dotEnvPath); os.IsNotExist(err) {
 				continue
 			}
-			envs, err := godotenv.Read(dotEnvPath)
+			envs, err := env.LoadDotenv(dotEnvPath)
 			if err != nil {
 				return nil, err
 			}

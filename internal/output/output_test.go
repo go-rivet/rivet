@@ -7,7 +7,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -156,7 +155,7 @@ func TestPrefixed(t *testing.T) { //nolint:paralleltest // cannot run in paralle
 func TestPrefixedWithColor(t *testing.T) {
 	t.Parallel()
 
-	color.NoColor = false
+	logger.NoColor = false
 
 	var b bytes.Buffer
 	l := logger.NewLogger(logger.LoggerOptions{

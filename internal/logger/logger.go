@@ -3,6 +3,7 @@ package logger
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/go-rivet/rivet/internal/term"
-	"github.com/go-rivet/rivet/pkg/rivet/errors"
 )
 
 const (

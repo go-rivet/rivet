@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/joho/godotenv"
-
+	ienv "github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/internal/templater"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
@@ -26,7 +25,7 @@ func Dotenv(vars *ast.Vars, tf *ast.Taskfile, dir string) (*ast.Vars, error) {
 			continue
 		}
 
-		envs, err := godotenv.Read(dotEnvPath)
+		envs, err := ienv.LoadDotenv(dotEnvPath)
 		if err != nil {
 			return nil, fmt.Errorf("error reading env file %s: %w", dotEnvPath, err)
 		}

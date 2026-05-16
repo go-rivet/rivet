@@ -1,16 +1,17 @@
 package templater
 
 import (
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
 	"maps"
-	"math/rand/v2"
+	mrand "math/rand/v2"
 	"os"
 	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
-	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
 	"mvdan.cc/sh/v3/shell"
 	"mvdan.cc/sh/v3/syntax"
@@ -40,13 +41,13 @@ func init() {
 		"relPath":      filepath.Rel,
 		"absPath":      filepath.Abs,
 		"merge":        merge,
-		"spew":         spew.Sdump,
+		"spew":         nativeSdump,
 		"fromYaml":     fromYaml,
 		"mustFromYaml": mustFromYaml,
 		"toYaml":       toYaml,
 		"mustToYaml":   mustToYaml,
-		"uuid":         uuid.New,
-		"randIntN":     rand.IntN,
+		"uuid":         newUUID,
+		"randIntN":     mrand.IntN,
 	}
 
 	// aliases
@@ -59,6 +60,31 @@ func init() {
 
 	templateFuncs = template.FuncMap(sprig.TxtFuncMap())
 	maps.Copy(templateFuncs, taskFuncs)
+}
+
+func nativeSdump(v interface{}) string {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%#v", v) // Fallback if JSON marshalling fails
+	}
+	return string(b)
+}
+
+func newUUID() string {
+	uuid := make([]byte, 16)
+	_, err := rand.Read(uuid)
+	if err != nil {
+		// crypto/rand.Read only fails if the system runtime lacks entropy
+		panic(err)
+	}
+
+	// Set version 4 (bits 4-7 of byte 6 to 0100)
+	uuid[6] = (uuid[6] & 0x0f) | 0x40
+	// Set variant to RFC 4122 (bits 6-7 of byte 8 to 10)
+	uuid[8] = (uuid[8] & 0x3f) | 0x80
+
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16])
 }
 
 func goos() string {

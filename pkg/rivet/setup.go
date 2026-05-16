@@ -10,13 +10,13 @@ import (
 	"sync"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/sajari/fuzzy"
 
 	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/output"
+	"github.com/go-rivet/rivet/internal/stringutil"
 	"github.com/go-rivet/rivet/internal/version"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile"
@@ -116,8 +116,7 @@ func (e *Executor) setupFuzzyModel() {
 		return
 	}
 
-	model := fuzzy.NewModel()
-	model.SetThreshold(1) // because we want to build grammar based on every task name
+	model := stringutil.NewModel()
 
 	var words []string
 	for name, task := range e.Taskfile.Tasks.All(nil) {

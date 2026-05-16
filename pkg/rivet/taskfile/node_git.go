@@ -10,12 +10,11 @@ import (
 	"strings"
 	"sync"
 
-	giturls "github.com/chainguard-dev/git-urls"
-	"github.com/hashicorp/go-getter"
-
 	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/internal/fsext"
+	"github.com/go-rivet/rivet/internal/gitutil"
+	"github.com/go-rivet/rivet/internal/repository"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 )
 
@@ -65,7 +64,7 @@ func NewGitNode(
 	opts ...NodeOption,
 ) (*GitNode, error) {
 	base := NewBaseNode(dir, opts...)
-	u, err := giturls.Parse(entrypoint)
+	u, err := gitutil.ParseGitURL(entrypoint)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +106,6 @@ func (node *GitNode) buildURL() string {
 	baseURL := node.url.String()
 
 	// Always use git:: prefix for git URLs (following Terraform's pattern)
-	// This forces go-getter to use git protocol
 	if node.ref != "" {
 		return fmt.Sprintf("git::%s?ref=%s&depth=1", baseURL, node.ref)
 	}
@@ -143,19 +141,13 @@ func (node *GitNode) getOrCloneRepo(ctx context.Context) (string, error) {
 
 	getterURL := node.buildURL()
 
-	client := &getter.Client{
-		Ctx:  ctx,
-		Src:  getterURL,
-		Dst:  cacheDir,
-		Mode: getter.ClientModeDir,
-	}
-
-	if err := client.Get(); err != nil {
+	cachePath, err := repository.FetchRemoteDirectory(ctx, getterURL, cacheDir)
+	if err != nil {
 		_ = os.RemoveAll(cacheDir)
 		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	return cacheDir, nil
+	return cachePath, nil
 }
 
 func (node *GitNode) ReadContext(ctx context.Context) ([]byte, error) {

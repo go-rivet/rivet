@@ -8,12 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/puzpuzpuz/xsync/v4"
-	"github.com/sajari/fuzzy"
-
+	"github.com/go-rivet/rivet/internal/concurrent"
 	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/output"
 	"github.com/go-rivet/rivet/internal/sort"
+	"github.com/go-rivet/rivet/internal/stringutil"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 )
 
@@ -74,7 +73,7 @@ type (
 		RootDir            string
 		EnableVersionCheck bool
 
-		fuzzyModel     *fuzzy.Model
+		fuzzyModel     *stringutil.FuzzyModel
 		fuzzyModelOnce sync.Once
 
 		promptedVars         *ast.Vars // vars collected via interactive prompts
@@ -83,7 +82,7 @@ type (
 		mkdirMutexMap        map[string]*sync.Mutex
 		executionHashes      map[string]context.Context
 		executionHashesMutex sync.Mutex
-		watchedDirs          *xsync.Map[string, bool]
+		watchedDirs          *concurrent.MapOf[string, bool]
 	}
 	TempDir struct {
 		Remote      string

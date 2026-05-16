@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fatih/color"
 	"go.yaml.in/yaml/v3"
+
+	"github.com/go-rivet/rivet/internal/logger"
 )
 
 type (
@@ -42,25 +43,25 @@ func (err *TaskfileDecodeError) Error() string {
 
 	// Print the error message
 	if err.Message != "" {
-		fmt.Fprintln(buf, color.RedString("err:  %s", err.Message))
+		logger.RedString("err:  %s", err.Message)
 	} else {
 		// Extract the errors from the TypeError
 		te := &yaml.TypeError{}
 		if errors.As(err.Err, &te) {
 			if len(te.Errors) > 1 {
-				fmt.Fprintln(buf, color.RedString("errs:"))
+				logger.RedString("errs:")
 				for _, message := range te.Errors {
-					fmt.Fprintln(buf, color.RedString("- %s", message))
+					logger.RedString("- %s", message)
 				}
 			} else {
-				fmt.Fprintln(buf, color.RedString("err:  %s", te.Errors[0]))
+				logger.RedString("err:  %s", te.Errors[0])
 			}
 		} else {
 			// Otherwise print the error message normally
-			fmt.Fprintln(buf, color.RedString("err:  %s", err.Err))
+			logger.RedString("err:  %s", err.Err)
 		}
 	}
-	fmt.Fprintln(buf, color.RedString("file: %s:%d:%d", err.Location, err.Line, err.Column))
+	logger.RedString("file: %s:%d:%d", err.Location, err.Line, err.Column)
 	fmt.Fprint(buf, err.Snippet)
 	return buf.String()
 }

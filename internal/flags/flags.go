@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/spf13/pflag"
 
 	"github.com/go-rivet/rivet/internal/env"
+	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/sort"
 	task "github.com/go-rivet/rivet/pkg/rivet"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
@@ -160,15 +160,13 @@ func init() {
 	if !colorExplicitlySet {
 		if os.Getenv("NO_COLOR") != "" {
 			Color = false
-			color.NoColor = true
+			logger.NoColor = true
 		} else if os.Getenv("FORCE_COLOR") != "" || isCI() {
 			Color = true
-			color.NoColor = false // Force colors even without TTY
+			logger.NoColor = false // Force colors even without TTY
 		}
-		// Otherwise, let fatih/color auto-detect TTY
 	} else {
-		// Explicit config: sync with fatih/color
-		color.NoColor = !Color
+		logger.NoColor = !Color
 	}
 }
 

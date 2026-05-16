@@ -5,9 +5,8 @@ import (
 	"strings"
 	"time"
 
-	giturls "github.com/chainguard-dev/git-urls"
-
 	"github.com/go-rivet/rivet/internal/fsext"
+	"github.com/go-rivet/rivet/internal/gitutil"
 )
 
 type Node interface {
@@ -79,7 +78,7 @@ func isRemoteEntrypoint(entrypoint string) bool {
 }
 
 func getScheme(uri string) (string, error) {
-	u, err := giturls.Parse(uri)
+	u, err := gitutil.ParseGitURL(uri)
 	if u == nil {
 		return "", err
 	}

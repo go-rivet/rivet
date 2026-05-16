@@ -44,9 +44,3 @@ ehthumbs.db
 *.tar.gz
 *.zip
 *_checksums.txt
-
-# === Local Environment Configuration ===
-.env
-.env.local
-.env.*.local
-.aider*

@@ -415,12 +415,8 @@ func (r *Reader) readNode(ctx context.Context, node Node) (*ast.Taskfile, error)
 		// Decode the taskfile and add the file info the any errors
 		taskfileDecodeErr := &errors.TaskfileDecodeError{}
 		if errors.As(err, &taskfileDecodeErr) {
-			snippet := NewSnippet(b,
-				WithLine(taskfileDecodeErr.Line),
-				WithColumn(taskfileDecodeErr.Column),
-				WithPadding(2),
-			)
-			return nil, taskfileDecodeErr.WithFileInfo(node.Location(), snippet.String())
+			snippetStr := GenerateSnippet(b, taskfileDecodeErr.Line, 2)
+			return nil, taskfileDecodeErr.WithFileInfo(node.Location(), snippetStr)
 		}
 		return nil, &errors.TaskfileInvalidError{URI: filepathext.TryAbsToRel(node.Location()), Err: err}
 	}

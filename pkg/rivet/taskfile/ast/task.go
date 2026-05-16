@@ -13,7 +13,7 @@ import (
 
 // Task represents a task
 type Task struct {
-	Task          string `hash:"ignore"`
+	Task          string `json:"-"`
 	Cmds          []*Cmd
 	Deps          []*Dep
 	Label         string
@@ -36,7 +36,7 @@ type Task struct {
 	Interactive   bool
 	Internal      bool
 	Method        string
-	Prefix        string `hash:"ignore"`
+	Prefix        string `json:"-"`
 	IgnoreError   bool
 	Run           string
 	Platforms     []*Platform
@@ -45,11 +45,11 @@ type Task struct {
 	Location      *Location
 	Failfast      bool
 	// Populated during merging
-	Namespace            string `hash:"ignore"`
+	Namespace            string `json:"-"`
 	IncludeVars          *Vars
 	IncludedTaskfileVars *Vars
 
-	FullName string `hash:"ignore"`
+	FullName string `json:"-"`
 }
 
 func (t *Task) Name() string {

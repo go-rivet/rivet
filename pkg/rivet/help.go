@@ -8,7 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Ladicle/tabwriter"
+	"text/tabwriter"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/go-rivet/rivet/internal/editors"
