@@ -33,7 +33,7 @@ jobs:
       - name: Run Golangci-Lint Runner
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.64 
+          version: v1.65
 
       - name: Execute Makefile Test Target
         run: |
