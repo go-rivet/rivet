@@ -17,7 +17,6 @@ import (
 	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/output"
 	"github.com/go-rivet/rivet/internal/stringutil"
-	"github.com/go-rivet/rivet/internal/version"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
@@ -302,7 +301,7 @@ func (e *Executor) doVersionChecks() error {
 
 	// Get the current version of Task
 	// If we can't parse the version (e.g. when its "devel"), then ignore the current version checks
-	currentVersion, err := semver.NewVersion(version.GetVersion())
+	currentVersion, err := semver.NewVersion("v3.0.0")
 	if err != nil {
 		return nil
 	}

@@ -21,12 +21,12 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		l := &logger.Logger{
+		l := logger.NewLogger(logger.LoggerOptions{
 			Stdout:  os.Stdout,
 			Stderr:  os.Stderr,
 			Verbose: flags.Verbose,
 			Color:   flags.Color,
-		}
+		})
 		if err, ok := err.(*errors.TaskRunError); ok && flags.ExitCode {
 			emitCIErrorAnnotation(err)
 			l.Errf(logger.Red, "%v\n", err)
@@ -57,12 +57,12 @@ func emitCIErrorAnnotation(err error) {
 }
 
 func run() error {
-	log := &logger.Logger{
+	log := logger.NewLogger(logger.LoggerOptions{
 		Stdout:  os.Stdout,
 		Stderr:  os.Stderr,
 		Verbose: flags.Verbose,
 		Color:   flags.Color,
-	}
+	})
 
 	if err := flags.Validate(); err != nil {
 		return err

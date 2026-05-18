@@ -16,5 +16,5 @@ func GetVersion() string {
 }
 
 func GetVersionWithBuildInfo() string {
-	return fmt.Sprintf("Rivet %s\nCommit: %s\nBuilt:  %s", Version, CommitSHA, BuildTime)
+	return fmt.Sprintf("Rivet:  %s\nCommit: %s\nBuilt:  %s", Version, CommitSHA, BuildTime)
 }
