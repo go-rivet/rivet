@@ -1,7 +1,8 @@
 # Rivet
 
-[![CI](https://github.com/go-rivet/rivet/actions/workflows/ci-release.yml/badge.svg)](https://github.com/go-rivet/rivet/actions/workflows/ci-release.yml)
+[![CI](https://github.com/go-rivet/rivet/actions/workflows/ci.yml/badge.svg)](https://github.com/go-rivet/rivet/actions/workflows/ci.yml)
 [![Docker](https://github.com/go-rivet/docker/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/go-rivet/docker/actions/workflows/build-and-push.yml)
+[![E2E](https://github.com/go-rivet/rivet/actions/workflows/e2e.yml/badge.svg)](https://github.com/go-rivet/rivet/actions/workflows/e2e.yml)
 [![GitHub release](https://img.shields.io/github/v/release/go-rivet/rivet?color=blue)](https://github.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)][license-url]
 

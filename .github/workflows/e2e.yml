@@ -1,0 +1,46 @@
+name: E2E
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+permissions: {}
+
+jobs:
+  e2e:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout rivet repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Build and Install rivet
+        run: |
+          make build
+          sudo make install
+          which rivet
+
+      - name: Clone go-rivet/e2e repository
+        uses: actions/checkout@v4
+        with:
+          repository: go-rivet/e2e
+          path: e2e
+
+      - name: Build E2E test runner
+        run: |
+          cd e2e
+          make build
+
+      - name: Run E2E tests
+        run: |
+          cd e2e
+          bin/re2e catalog
