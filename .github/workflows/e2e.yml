@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout rivet repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -25,6 +27,7 @@ jobs:
 
       - name: Build and Install rivet
         run: |
+          git fetch --tags --force      
           make build
           make install
           RUNNER_GOBIN=$(go env GOBIN)
