@@ -26,8 +26,17 @@ jobs:
       - name: Build and Install rivet
         run: |
           make build
-          sudo make install
+          make install
+          RUNNER_GOBIN=$(go env GOBIN)
+          if [ -z "$RUNNER_GOBIN" ]; then
+            RUNNER_GOBIN=$(go env GOPATH)/bin
+          fi
+          echo "$RUNNER_GOBIN" >> $GITHUB_PATH
+
+      - name: Verify Installation
+        run: |
           which rivet
+          rivet --version
 
       - name: Clone go-rivet/e2e repository
         uses: actions/checkout@v4
