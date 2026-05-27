@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,10 +26,14 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	// FIXME: log level
+	logLevelVar := &slog.LevelVar{}
+	logLevelVar.Set(slog.LevelInfo)
+
 	rlog.Init(rlog.RlogOptions{
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
-		// FIXME: log level
+		Level:  logLevelVar,
 		// FIXME: format
 		Color: flags.Color,
 	})

@@ -39,6 +39,9 @@ func NewCliHandler(out io.Writer, err io.Writer, color bool, opts *slog.HandlerO
 }
 
 func (h *CliHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	if h == nil || h.opts == nil {
+		return level >= slog.LevelInfo
+	}
 	if h.opts.Level != nil {
 		return level >= h.opts.Level.Level()
 	}
@@ -93,6 +96,9 @@ func (h *CliHandler) Handle(ctx context.Context, r slog.Record) error {
 }
 
 func (h *CliHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	if h == nil {
+		return h
+	}
 	h.mu.Lock()
 	newAttrs := append(append([]slog.Attr{}, h.attrs...), attrs...)
 	h.mu.Unlock()
