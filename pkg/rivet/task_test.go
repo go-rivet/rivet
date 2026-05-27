@@ -2,9 +2,11 @@ package rivet_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"maps"
 	rand "math/rand/v2"
 	"net/http"
@@ -29,6 +31,7 @@ import (
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 
 	task "github.com/go-rivet/rivet/pkg/rivet"
 )
@@ -49,6 +52,21 @@ type (
 		fixtureTemplatingEnabled bool
 	}
 )
+
+func SetupTestLogger(t *testing.T, verbose, silent bool) (context.Context, *SyncBuffer) {
+	t.Helper()
+
+	var buffer SyncBuffer
+	logOpts := &slog.HandlerOptions{Level: slog.LevelInfo}
+	if silent {
+		logOpts.Level = slog.LevelError
+	} else if verbose {
+		logOpts.Level = slog.LevelDebug
+	}
+	logHandler := rlog.NewCliHandler(&buffer, &buffer, false, logOpts)
+	ctx := rlog.WithContext(t.Context(), logHandler)
+	return ctx, &buffer
+}
 
 // goldenFileName makes the file path for fixture files safe for all well-known
 // operating systems. Windows in particular has a lot of restrictions the
@@ -105,10 +123,10 @@ func (tt *TaskTest) writeFixture(
 func (tt *TaskTest) writeFixtureBuffer(
 	t *testing.T,
 	g *goldie.Goldie,
-	buff bytes.Buffer,
+	buffer bytes.Buffer,
 ) {
 	t.Helper()
-	tt.writeFixture(t, g, "", buff.Bytes())
+	tt.writeFixture(t, g, "", buffer.Bytes())
 }
 
 // writeFixtureErrSetup is a wrapper for writing the output of an error during
@@ -403,8 +421,10 @@ func (fct fileContentTest) Run(t *testing.T) {
 		task.WithStderr(io.Discard),
 	)
 
-	require.NoError(t, e.Setup(), "e.Setup()")
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: fct.Target}), "e.Run(target)")
+	ctx, _ := SetupTestLogger(t, false, false)
+
+	require.NoError(t, e.Setup(ctx), "e.Setup(ctx)")
+	require.NoError(t, e.Run(ctx, &task.Call{Task: fct.Target}), "e.Run(target)")
 	for name, expectContent := range fct.Files {
 		t.Run(fct.name(name), func(t *testing.T) {
 			path := filepathext.SmartJoin(e.Dir, name)
@@ -441,13 +461,13 @@ func TestGenerates(t *testing.T) {
 		}
 	}
 
-	buff := bytes.NewBuffer(nil)
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(buff),
-		task.WithStderr(buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
 	for _, theTask := range []string{relTask, absTask, fileWithSpaces} {
 		destFile := filepathext.SmartJoin(dir, theTask)
@@ -455,7 +475,7 @@ func TestGenerates(t *testing.T) {
 			fmt.Sprintf("task: Task \"%s\" is up to date\n", theTask)
 
 		// Run task for the first time.
-		require.NoError(t, e.Run(t.Context(), &task.Call{Task: theTask}))
+		require.NoError(t, e.Run(ctx, &task.Call{Task: theTask}))
 
 		if _, err := os.Stat(srcFile); err != nil {
 			t.Errorf("File should exist: %v", err)
@@ -464,17 +484,17 @@ func TestGenerates(t *testing.T) {
 			t.Errorf("File should exist: %v", err)
 		}
 		// Ensure task was not incorrectly found to be up-to-date on first run.
-		if buff.String() == upToDate {
-			t.Errorf("Wrong output message: %s", buff.String())
+		if buffer.buf.String() == upToDate {
+			t.Errorf("Wrong output message: %s", buffer.buf.String())
 		}
-		buff.Reset()
+		buffer.buf.Reset()
 
 		// Re-run task to ensure it's now found to be up-to-date.
-		require.NoError(t, e.Run(t.Context(), &task.Call{Task: theTask}))
-		if buff.String() != upToDate {
-			t.Errorf("Wrong output message: %s", buff.String())
+		require.NoError(t, e.Run(ctx, &task.Call{Task: theTask}))
+		if buffer.buf.String() != upToDate {
+			t.Errorf("Wrong output message: %s", buffer.buf.String())
 		}
-		buff.Reset()
+		buffer.buf.Reset()
 	}
 }
 
@@ -499,20 +519,20 @@ func TestStatusChecksum(t *testing.T) { // nolint:paralleltest // cannot run in 
 				require.Error(t, err)
 			}
 
-			var buff bytes.Buffer
 			tempDir := task.TempDir{
 				Remote:      filepathext.SmartJoin(dir, ".task"),
 				Fingerprint: filepathext.SmartJoin(dir, ".task"),
 			}
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(dir),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithTempDir(tempDir),
 			)
-			require.NoError(t, e.Setup())
+			require.NoError(t, e.Setup(ctx))
 
-			require.NoError(t, e.Run(t.Context(), &task.Call{Task: test.task}))
+			require.NoError(t, e.Run(ctx, &task.Call{Task: test.task}))
 			for _, f := range test.files {
 				_, err := os.Stat(filepathext.SmartJoin(dir, f))
 				require.NoError(t, err)
@@ -524,9 +544,9 @@ func TestStatusChecksum(t *testing.T) { // nolint:paralleltest // cannot run in 
 			require.NoError(t, err)
 			time := s.ModTime()
 
-			buff.Reset()
-			require.NoError(t, e.Run(t.Context(), &task.Call{Task: test.task}))
-			assert.Equal(t, `task: Task "`+test.task+`" is up to date`+"\n", buff.String())
+			buffer.buf.Reset()
+			require.NoError(t, e.Run(ctx, &task.Call{Task: test.task}))
+			assert.Equal(t, `task: Task "`+test.task+`" is up to date`+"\n", buffer.buf.String())
 
 			s, err = os.Stat(filepathext.SmartJoin(tempDir.Fingerprint, "checksum/"+test.task))
 			require.NoError(t, err)
@@ -551,25 +571,25 @@ func TestStatusTimestamp(t *testing.T) { // nolint:paralleltest // cannot run in
 	_ = os.Remove(generatedFile)
 	_ = os.RemoveAll(filepathext.SmartJoin(dir, ".task"))
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithTempDir(tempDir),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
 	// First run: task should execute and create generated.txt.
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build"}))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build"}))
 	_, err := os.Stat(generatedFile)
 	require.NoError(t, err, "generated.txt should exist after first run")
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// Second run: task should be up to date.
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build"}))
-	assert.Equal(t, `task: Task "build" is up to date`+"\n", buff.String())
-	buff.Reset()
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build"}))
+	assert.Equal(t, `task: Task "build" is up to date`+"\n", buffer.buf.String())
+	buffer.buf.Reset()
 
 	// Delete the generated file (simulate a clean), but leave the timestamp file.
 	require.NoError(t, os.Remove(generatedFile))
@@ -578,8 +598,8 @@ func TestStatusTimestamp(t *testing.T) { // nolint:paralleltest // cannot run in
 
 	// Third run: task MUST re-run because generated.txt is missing.
 	// This is the regression: previously the task was incorrectly skipped.
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build"}))
-	assert.NotContains(t, buff.String(), "is up to date", "task should re-run when generated file is missing")
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build"}))
+	assert.NotContains(t, buffer.buf.String(), "is up to date", "task should re-run when generated file is missing")
 	_, err = os.Stat(generatedFile)
 	require.NoError(t, err, "generated.txt should be recreated after third run")
 }
@@ -600,25 +620,25 @@ func TestStatusChecksumMissingGenerated(t *testing.T) { // nolint:paralleltest /
 	_ = os.Remove(generatedFile)
 	_ = os.RemoveAll(filepathext.SmartJoin(dir, ".task"))
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithTempDir(tempDir),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
 	// First run: task should execute and create generated.txt.
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build"}))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build"}))
 	_, err := os.Stat(generatedFile)
 	require.NoError(t, err, "generated.txt should exist after first run")
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// Second run: task should be up to date.
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build"}))
-	assert.Equal(t, `task: Task "build" is up to date`+"\n", buff.String())
-	buff.Reset()
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build"}))
+	assert.Equal(t, `task: Task "build" is up to date`+"\n", buffer.buf.String())
+	buffer.buf.Reset()
 
 	// Delete the generated file (simulate a clean), but leave the checksum file.
 	require.NoError(t, os.Remove(generatedFile))
@@ -627,8 +647,8 @@ func TestStatusChecksumMissingGenerated(t *testing.T) { // nolint:paralleltest /
 
 	// Third run: task MUST re-run because generated.txt is missing.
 	// This is the regression: previously the task was incorrectly skipped.
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build"}))
-	assert.NotContains(t, buff.String(), "is up to date", "task should re-run when generated file is missing")
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build"}))
+	assert.NotContains(t, buffer.buf.String(), "is up to date", "task should re-run when generated file is missing")
 	_, err = os.Stat(generatedFile)
 	require.NoError(t, err, "generated.txt should be recreated after third run")
 }
@@ -641,33 +661,33 @@ func TestStatusVariables(t *testing.T) {
 	_ = os.RemoveAll(filepathext.SmartJoin(dir, ".task"))
 	_ = os.Remove(filepathext.SmartJoin(dir, "generated.txt"))
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, true, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
 		task.WithTempDir(task.TempDir{
 			Remote:      filepathext.SmartJoin(dir, ".task"),
 			Fingerprint: filepathext.SmartJoin(dir, ".task"),
 		}),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(false),
 		task.WithVerbose(true),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build-checksum"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build-checksum"}))
 
-	assert.Contains(t, buff.String(), "0f3b0da8f6ff2e4622e01846ddbaa399386dd003f93afa87dff8623750ff9eb9")
+	assert.Contains(t, buffer.buf.String(), "0f3b0da8f6ff2e4622e01846ddbaa399386dd003f93afa87dff8623750ff9eb9")
 
-	buff.Reset()
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build-ts"}))
+	buffer.buf.Reset()
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build-ts"}))
 
 	inf, err := os.Stat(filepathext.SmartJoin(dir, "source.txt"))
 	require.NoError(t, err)
 	ts := fmt.Sprintf("%d", inf.ModTime().Unix())
 	tf := inf.ModTime().String()
 
-	assert.Contains(t, buff.String(), ts)
-	assert.Contains(t, buff.String(), tf)
+	assert.Contains(t, buffer.buf.String(), ts)
+	assert.Contains(t, buffer.buf.String(), tf)
 }
 
 func TestCmdsVariables(t *testing.T) {
@@ -677,46 +697,47 @@ func TestCmdsVariables(t *testing.T) {
 
 	_ = os.RemoveAll(filepathext.SmartJoin(dir, ".task"))
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
 		task.WithTempDir(task.TempDir{
 			Remote:      filepathext.SmartJoin(dir, ".task"),
 			Fingerprint: filepathext.SmartJoin(dir, ".task"),
 		}),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(false),
 		task.WithVerbose(true),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build-checksum"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build-checksum"}))
 
-	assert.Contains(t, buff.String(), "0f3b0da8f6ff2e4622e01846ddbaa399386dd003f93afa87dff8623750ff9eb9")
+	assert.Contains(t, buffer.buf.String(), "0f3b0da8f6ff2e4622e01846ddbaa399386dd003f93afa87dff8623750ff9eb9")
 
-	buff.Reset()
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build-ts"}))
+	buffer.buf.Reset()
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build-ts"}))
 	inf, err := os.Stat(filepathext.SmartJoin(dir, "source.txt"))
 	require.NoError(t, err)
 	ts := fmt.Sprintf("%d", inf.ModTime().Unix())
 	tf := inf.ModTime().String()
 
-	assert.Contains(t, buff.String(), ts)
-	assert.Contains(t, buff.String(), tf)
+	assert.Contains(t, buffer.buf.String(), ts)
+	assert.Contains(t, buffer.buf.String(), tf)
 }
 
 func TestCyclicDep(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/cyclic"
+	ctx, _ := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
 		task.WithDir(dir),
 		task.WithStdout(io.Discard),
 		task.WithStderr(io.Discard),
 	)
-	require.NoError(t, e.Setup())
-	err := e.Run(t.Context(), &task.Call{Task: "task-1"})
+	require.NoError(t, e.Setup(ctx))
+	err := e.Run(ctx, &task.Call{Task: "task-1"})
 	var taskCalledTooManyTimesError *errors.TaskCalledTooManyTimesError
 	assert.ErrorAs(t, err, &taskCalledTooManyTimesError)
 }
@@ -738,13 +759,14 @@ func TestTaskVersion(t *testing.T) {
 		t.Run(test.Dir, func(t *testing.T) {
 			t.Parallel()
 
+			ctx, _ := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(test.Dir),
 				task.WithStdout(io.Discard),
 				task.WithStderr(io.Discard),
 				task.WithVersionCheck(true),
 			)
-			err := e.Setup()
+			err := e.Setup(ctx)
 			if test.wantErr {
 				require.Error(t, err)
 				return
@@ -761,17 +783,18 @@ func TestTaskIgnoreErrors(t *testing.T) {
 
 	const dir = "testdata/ignore_errors"
 
+	ctx, _ := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
 		task.WithStdout(io.Discard),
 		task.WithStderr(io.Discard),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "task-should-pass"}))
-	require.Error(t, e.Run(t.Context(), &task.Call{Task: "task-should-fail"}))
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "cmd-should-pass"}))
-	require.Error(t, e.Run(t.Context(), &task.Call{Task: "cmd-should-fail"}))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "task-should-pass"}))
+	require.Error(t, e.Run(ctx, &task.Call{Task: "task-should-fail"}))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "cmd-should-pass"}))
+	require.Error(t, e.Run(ctx, &task.Call{Task: "cmd-should-fail"}))
 }
 
 func TestExpand(t *testing.T) {
@@ -783,16 +806,16 @@ func TestExpand(t *testing.T) {
 	if err != nil {
 		t.Errorf("Couldn't get $HOME: %v", err)
 	}
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "pwd"}))
-	assert.Equal(t, home, strings.TrimSpace(buff.String()))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "pwd"}))
+	assert.Equal(t, home, strings.TrimSpace(buffer.buf.String()))
 }
 
 func TestDry(t *testing.T) {
@@ -803,18 +826,18 @@ func TestDry(t *testing.T) {
 	file := filepathext.SmartJoin(dir, "file.txt")
 	_ = os.Remove(file)
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithDry(true),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build"}))
 
-	assert.Equal(t, "task: [build] touch file.txt", strings.TrimSpace(buff.String()))
+	assert.Equal(t, "task: [build] touch file.txt", strings.TrimSpace(buffer.buf.String()))
 	if _, err := os.Stat(file); err == nil {
 		t.Errorf("File should not exist %s", file)
 	}
@@ -829,6 +852,7 @@ func TestDryChecksum(t *testing.T) {
 
 	checksumFile := filepathext.SmartJoin(dir, ".task/checksum/default")
 	_ = os.Remove(checksumFile)
+	ctx, _ := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
 		task.WithDir(dir),
@@ -840,14 +864,14 @@ func TestDryChecksum(t *testing.T) {
 		task.WithStderr(io.Discard),
 		task.WithDry(true),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "default"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "default"}))
 
 	_, err := os.Stat(checksumFile)
 	require.Error(t, err, "checksum file should not exist")
 
 	e.Dry = false
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "default"}))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "default"}))
 	_, err = os.Stat(checksumFile)
 	require.NoError(t, err, "checksum file should exist")
 }
@@ -929,7 +953,7 @@ func TestIncludesRemote(t *testing.T) {
 			t.Setenv("FIRST_REMOTE_URL", tc.firstRemote)
 			t.Setenv("SECOND_REMOTE_URL", tc.secondRemote)
 
-			var buff SyncBuffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 
 			// Extract host from server URL for trust testing
 			parsedURL, err := url.Parse(srv.URL)
@@ -944,12 +968,10 @@ func TestIncludesRemote(t *testing.T) {
 					name: "online, always download",
 					executor: task.NewExecutor(
 						task.WithDir(dir),
-						task.WithStdout(&buff),
-						task.WithStderr(&buff),
+						task.WithStdout(buffer),
+						task.WithStderr(buffer),
 						task.WithTimeout(time.Minute),
 						task.WithInsecure(true),
-						task.WithStdout(&buff),
-						task.WithStderr(&buff),
 						task.WithVerbose(true),
 
 						// Without caching
@@ -961,12 +983,10 @@ func TestIncludesRemote(t *testing.T) {
 					name: "offline, use cache",
 					executor: task.NewExecutor(
 						task.WithDir(dir),
-						task.WithStdout(&buff),
-						task.WithStderr(&buff),
+						task.WithStdout(buffer),
+						task.WithStderr(buffer),
 						task.WithTimeout(time.Minute),
 						task.WithInsecure(true),
-						task.WithStdout(&buff),
-						task.WithStderr(&buff),
 						task.WithVerbose(true),
 
 						// With caching
@@ -979,12 +999,12 @@ func TestIncludesRemote(t *testing.T) {
 					name: "with trusted hosts, no prompts",
 					executor: task.NewExecutor(
 						task.WithDir(dir),
-						task.WithStdout(&buff),
-						task.WithStderr(&buff),
+						task.WithStdout(buffer),
+						task.WithStderr(buffer),
 						task.WithTimeout(time.Minute),
 						task.WithInsecure(true),
-						task.WithStdout(&buff),
-						task.WithStderr(&buff),
+						task.WithStdout(buffer),
+						task.WithStderr(buffer),
 						task.WithVerbose(true),
 
 						// With trusted hosts
@@ -996,7 +1016,7 @@ func TestIncludesRemote(t *testing.T) {
 
 			for _, e := range executors {
 				t.Run(e.name, func(t *testing.T) {
-					require.NoError(t, e.executor.Setup())
+					require.NoError(t, e.executor.Setup(ctx))
 
 					for k, taskCall := range taskCalls {
 						t.Run(taskCall.Task, func(t *testing.T) {
@@ -1019,7 +1039,7 @@ func TestIncludesRemote(t *testing.T) {
 				})
 			}
 
-			t.Log("\noutput:\n", buff.buf.String())
+			t.Log("\noutput:\n", buffer.buf.String())
 		})
 	}
 }
@@ -1029,15 +1049,15 @@ func TestIncludeCycle(t *testing.T) {
 
 	const dir = "testdata/includes_cycle"
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(true),
 	)
 
-	err := e.Setup()
+	err := e.Setup(ctx)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "task: include cycle detected between")
 }
@@ -1047,15 +1067,15 @@ func TestIncludesIncorrect(t *testing.T) {
 
 	const dir = "testdata/includes_incorrect"
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(true),
 	)
 
-	err := e.Setup()
+	err := e.Setup(ctx)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Failed to parse testdata/includes_incorrect/incomplete.yml:", err.Error())
 }
@@ -1116,22 +1136,20 @@ func TestIncludesHttp(t *testing.T) {
 					t.Setenv("INCLUDE_ROOT", remote.root)
 					entrypoint := filepath.Join(dir, taskfile)
 
-					var buff SyncBuffer
+					ctx, buffer := SetupTestLogger(t, true, false)
 					e := task.NewExecutor(
 						task.WithEntrypoint(entrypoint),
 						task.WithDir(dir),
-						task.WithStdout(&buff),
-						task.WithStderr(&buff),
+						task.WithStdout(buffer),
+						task.WithStderr(buffer),
 						task.WithInsecure(true),
 						task.WithDownload(true),
 						task.WithAssumeYes(true),
-						task.WithStdout(&buff),
-						task.WithStderr(&buff),
 						task.WithVerbose(true),
 						task.WithTimeout(time.Minute),
 					)
-					require.NoError(t, e.Setup())
-					defer func() { t.Log("output:", buff.buf.String()) }()
+					require.NoError(t, e.Setup(ctx))
+					defer func() { t.Log("output:", buffer.buf.String()) }()
 
 					tcs := []struct {
 						name, dir string
@@ -1221,6 +1239,7 @@ func TestIncludesOptionalImplicitFalse(t *testing.T) {
 
 	message := "task: No Taskfile found at \"%s/%s/TaskfileOptional.yml\""
 	expected := fmt.Sprintf(message, filepath.ToSlash(wd), dir)
+	ctx, _ := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
 		task.WithDir(dir),
@@ -1228,7 +1247,7 @@ func TestIncludesOptionalImplicitFalse(t *testing.T) {
 		task.WithStderr(io.Discard),
 	)
 
-	err := e.Setup()
+	err := e.Setup(ctx)
 	require.Error(t, err)
 	assert.Equal(t, expected, err.Error())
 }
@@ -1241,6 +1260,7 @@ func TestIncludesOptionalExplicitFalse(t *testing.T) {
 
 	message := "task: No Taskfile found at \"%s/%s/TaskfileOptional.yml\""
 	expected := fmt.Sprintf(message, filepath.ToSlash(wd), dir)
+	ctx, _ := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
 		task.WithDir(dir),
@@ -1248,7 +1268,7 @@ func TestIncludesOptionalExplicitFalse(t *testing.T) {
 		task.WithStderr(io.Discard),
 	)
 
-	err := e.Setup()
+	err := e.Setup(ctx)
 	require.Error(t, err)
 	assert.Equal(t, expected, err.Error())
 }
@@ -1278,21 +1298,21 @@ func TestIncludesRelativePath(t *testing.T) {
 
 	const dir = "testdata/includes_rel_path"
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
 
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "common:pwd"}))
-	assert.Contains(t, filepath.ToSlash(buff.String()), "testdata/includes_rel_path/common")
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "common:pwd"}))
+	assert.Contains(t, filepath.ToSlash(buffer.buf.String()), "testdata/includes_rel_path/common")
 
-	buff.Reset()
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "included:common:pwd"}))
-	assert.Contains(t, filepath.ToSlash(buff.String()), "testdata/includes_rel_path/common")
+	buffer.buf.Reset()
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "included:common:pwd"}))
+	assert.Contains(t, filepath.ToSlash(buffer.buf.String()), "testdata/includes_rel_path/common")
 }
 
 func TestIncludesInternal(t *testing.T) {
@@ -1314,22 +1334,22 @@ func TestIncludesInternal(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(dir),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithSilent(true),
 			)
-			require.NoError(t, e.Setup())
+			require.NoError(t, e.Setup(ctx))
 
-			err := e.Run(t.Context(), &task.Call{Task: test.task})
+			err := e.Run(ctx, &task.Call{Task: test.task})
 			if test.expectedErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
-			assert.Equal(t, test.expectedOutput, buff.String())
+			assert.Equal(t, test.expectedOutput, buffer.buf.String())
 		})
 	}
 }
@@ -1357,21 +1377,21 @@ func TestIncludesFlatten(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(dir),
 				task.WithEntrypoint(dir+"/"+test.taskfile),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithSilent(true),
 			)
-			err := e.Setup()
+			err := e.Setup(ctx)
 			if test.expectedErr {
 				assert.EqualError(t, err, test.expectedOutput)
 			} else {
 				require.NoError(t, err)
-				_ = e.Run(t.Context(), &task.Call{Task: test.task})
-				assert.Equal(t, test.expectedOutput, buff.String())
+				_ = e.Run(ctx, &task.Call{Task: test.task})
+				assert.Equal(t, test.expectedOutput, buffer.buf.String())
 			}
 		})
 	}
@@ -1393,22 +1413,22 @@ func TestIncludesInterpolation(t *testing.T) { // nolint:paralleltest // cannot 
 
 	for _, test := range tests { // nolint:paralleltest // cannot run in parallel
 		t.Run(test.name, func(t *testing.T) {
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(filepath.Join(dir, test.name)),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithSilent(true),
 			)
-			require.NoError(t, e.Setup())
+			require.NoError(t, e.Setup(ctx))
 
-			err := e.Run(t.Context(), &task.Call{Task: test.task})
+			err := e.Run(ctx, &task.Call{Task: test.task})
 			if test.expectedErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
-			assert.Equal(t, test.expectedOutput, buff.String())
+			assert.Equal(t, test.expectedOutput, buffer.buf.String())
 		})
 	}
 }
@@ -1416,31 +1436,31 @@ func TestIncludesInterpolation(t *testing.T) { // nolint:paralleltest // cannot 
 func TestIncludesWithExclude(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/includes_with_excludes"),
 		task.WithSilent(true),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	err := e.Run(t.Context(), &task.Call{Task: "included:bar"})
+	err := e.Run(ctx, &task.Call{Task: "included:bar"})
 	require.NoError(t, err)
-	assert.Equal(t, "bar\n", buff.String())
-	buff.Reset()
+	assert.Equal(t, "bar\n", buffer.buf.String())
+	buffer.buf.Reset()
 
-	err = e.Run(t.Context(), &task.Call{Task: "included:foo"})
+	err = e.Run(ctx, &task.Call{Task: "included:foo"})
 	require.Error(t, err)
-	buff.Reset()
+	buffer.buf.Reset()
 
-	err = e.Run(t.Context(), &task.Call{Task: "bar"})
+	err = e.Run(ctx, &task.Call{Task: "bar"})
 	require.Error(t, err)
-	buff.Reset()
+	buffer.buf.Reset()
 
-	err = e.Run(t.Context(), &task.Call{Task: "foo"})
+	err = e.Run(ctx, &task.Call{Task: "foo"})
 	require.NoError(t, err)
-	assert.Equal(t, "foo\n", buff.String())
+	assert.Equal(t, "foo\n", buffer.buf.String())
 }
 
 func TestIncludedTaskfileVarMerging(t *testing.T) {
@@ -1459,18 +1479,18 @@ func TestIncludedTaskfileVarMerging(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(dir),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithSilent(true),
 			)
-			require.NoError(t, e.Setup())
+			require.NoError(t, e.Setup(ctx))
 
-			err := e.Run(t.Context(), &task.Call{Task: test.task})
+			err := e.Run(ctx, &task.Call{Task: test.task})
 			require.NoError(t, err)
-			assert.Contains(t, filepath.ToSlash(buff.String()), test.expectedOutput)
+			assert.Contains(t, filepath.ToSlash(buffer.buf.String()), test.expectedOutput)
 		})
 	}
 }
@@ -1494,22 +1514,22 @@ func TestInternalTask(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(dir),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithSilent(true),
 			)
-			require.NoError(t, e.Setup())
+			require.NoError(t, e.Setup(ctx))
 
-			err := e.Run(t.Context(), &task.Call{Task: test.task})
+			err := e.Run(ctx, &task.Call{Task: test.task})
 			if test.expectedErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
-			assert.Equal(t, test.expectedOutput, buff.String())
+			assert.Equal(t, test.expectedOutput, buffer.buf.String())
 		})
 	}
 }
@@ -1579,16 +1599,16 @@ func TestSummary(t *testing.T) {
 
 	const dir = "testdata/summary"
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSummary(true),
 		task.WithSilent(true),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "task-with-summary"}, &task.Call{Task: "other-task-with-summary"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "task-with-summary"}, &task.Call{Task: "other-task-with-summary"}))
 
 	data, err := os.ReadFile(filepathext.SmartJoin(dir, "task-with-summary.txt"))
 	require.NoError(t, err)
@@ -1598,7 +1618,7 @@ func TestSummary(t *testing.T) {
 		expectedOutput = strings.ReplaceAll(expectedOutput, "\r\n", "\n")
 	}
 
-	assert.Equal(t, expectedOutput, buff.String())
+	assert.Equal(t, expectedOutput, buffer.buf.String())
 }
 
 func TestWhenNoDirAttributeItRunsInSameDirAsTaskfile(t *testing.T) {
@@ -1606,19 +1626,19 @@ func TestWhenNoDirAttributeItRunsInSameDirAsTaskfile(t *testing.T) {
 
 	const expected = "dir"
 	const dir = "testdata/" + expected
-	var out bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&out),
-		task.WithStderr(&out),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
 
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "whereami"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "whereami"}))
 
 	// got should be the "dir" part of "testdata/dir"
 	// Normalize path separators for cross-platform compatibility (Windows uses backslashes)
-	normalized := normalizePathSeparators(out.String())
+	normalized := normalizePathSeparators(buffer.buf.String())
 	got := strings.TrimSuffix(filepath.Base(normalized), "\n")
 	assert.Equal(t, expected, got, "Mismatch in the working directory")
 }
@@ -1628,18 +1648,18 @@ func TestWhenDirAttributeAndDirExistsItRunsInThatDir(t *testing.T) {
 
 	const expected = "exists"
 	const dir = "testdata/dir/explicit_exists"
-	var out bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&out),
-		task.WithStderr(&out),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
 
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "whereami"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "whereami"}))
 
 	// Normalize path separators for cross-platform compatibility (Windows uses backslashes)
-	normalized := normalizePathSeparators(out.String())
+	normalized := normalizePathSeparators(buffer.buf.String())
 	got := strings.TrimSuffix(filepath.Base(normalized), "\n")
 	assert.Equal(t, expected, got, "Mismatch in the working directory")
 }
@@ -1651,11 +1671,11 @@ func TestWhenDirAttributeItCreatesMissingAndRunsInThatDir(t *testing.T) {
 	const dir = "testdata/dir/explicit_doesnt_exist/"
 	const toBeCreated = dir + expected
 	const target = "whereami"
-	var out bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&out),
-		task.WithStderr(&out),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
 
 	// Ensure that the directory to be created doesn't actually exist.
@@ -1663,11 +1683,11 @@ func TestWhenDirAttributeItCreatesMissingAndRunsInThatDir(t *testing.T) {
 	if _, err := os.Stat(toBeCreated); err == nil {
 		t.Errorf("Directory should not exist: %v", err)
 	}
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: target}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: target}))
 
 	// Normalize path separators for cross-platform compatibility (Windows uses backslashes)
-	normalized := normalizePathSeparators(out.String())
+	normalized := normalizePathSeparators(buffer.buf.String())
 	got := strings.TrimSuffix(filepath.Base(normalized), "\n")
 	assert.Equal(t, expected, got, "Mismatch in the working directory")
 
@@ -1682,11 +1702,11 @@ func TestDynamicVariablesRunOnTheNewCreatedDir(t *testing.T) {
 	const dir = "testdata/dir/dynamic_var_on_created_dir/"
 	const toBeCreated = dir + expected
 	const target = "default"
-	var out bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&out),
-		task.WithStderr(&out),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
 
 	// Ensure that the directory to be created doesn't actually exist.
@@ -1694,12 +1714,12 @@ func TestDynamicVariablesRunOnTheNewCreatedDir(t *testing.T) {
 	if _, err := os.Stat(toBeCreated); err == nil {
 		t.Errorf("Directory should not exist: %v", err)
 	}
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: target}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: target}))
 
 	// Normalize path separators for cross-platform compatibility (Windows uses backslashes)
 	// Take only the first line as Windows may output additional debug info
-	normalized := normalizePathSeparators(out.String())
+	normalized := normalizePathSeparators(buffer.buf.String())
 	firstLine := strings.Split(normalized, "\n")[0]
 	got := filepath.Base(firstLine)
 	assert.Equal(t, expected, got, "Mismatch in the working directory")
@@ -1735,11 +1755,11 @@ func TestDynamicVariablesRunOnParentDir(t *testing.T) {
 	const dir = "testdata/dir/dynamic_var_on_parent_dir/"
 	const toBeCreated = dir + "somefolder"
 	const target = "default"
-	var out bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&out),
-		task.WithStderr(&out),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(true),
 	)
 
@@ -1748,10 +1768,10 @@ func TestDynamicVariablesRunOnParentDir(t *testing.T) {
 	if _, err := os.Stat(toBeCreated); err == nil {
 		t.Errorf("Directory should not exist: %v", err)
 	}
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: target}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: target}))
 
-	normalized := normalizePathSeparators(out.String())
+	normalized := normalizePathSeparators(buffer.buf.String())
 	got := strings.TrimSuffix(filepath.Base(normalized), "\n")
 	assert.Equal(t, expected, got, "Mismatch message from parent dir")
 
@@ -1762,13 +1782,15 @@ func TestDynamicVariablesRunOnParentDir(t *testing.T) {
 func TestDisplaysErrorOnVersion1Schema(t *testing.T) {
 	t.Parallel()
 
+	ctx, _ := SetupTestLogger(t, false, false)
+
 	e := task.NewExecutor(
 		task.WithDir("testdata/version/v1"),
 		task.WithStdout(io.Discard),
 		task.WithStderr(io.Discard),
 		task.WithVersionCheck(true),
 	)
-	err := e.Setup()
+	err := e.Setup(ctx)
 	require.Error(t, err)
 	assert.Regexp(t, regexp.MustCompile(`task: Invalid schema version in Taskfile \".*testdata\/version\/v1\/Taskfile\.yml\":\nSchema version \(1\.0\.0\) no longer supported\. Please use v3 or above`), err.Error())
 }
@@ -1776,14 +1798,14 @@ func TestDisplaysErrorOnVersion1Schema(t *testing.T) {
 func TestDisplaysErrorOnVersion2Schema(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/version/v2"),
 		task.WithStdout(io.Discard),
-		task.WithStderr(&buff),
+		task.WithStderr(buffer),
 		task.WithVersionCheck(true),
 	)
-	err := e.Setup()
+	err := e.Setup(ctx)
 	require.Error(t, err)
 	assert.Regexp(t, regexp.MustCompile(`task: Invalid schema version in Taskfile \".*testdata\/version\/v2\/Taskfile\.yml\":\nSchema version \(2\.0\.0\) no longer supported\. Please use v3 or above`), err.Error())
 }
@@ -1793,16 +1815,16 @@ func TestShortTaskNotation(t *testing.T) {
 
 	const dir = "testdata/short_task_notation"
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(true),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "default"}))
-	assert.Equal(t, "string-slice-1\nstring-slice-2\nstring\n", buff.String())
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "default"}))
+	assert.Equal(t, "string-slice-1\nstring-slice-2\nstring\n", buffer.buf.String())
 }
 
 func TestDotenvShouldIncludeAllEnvFiles(t *testing.T) {
@@ -1825,15 +1847,15 @@ func TestDotenvShouldIncludeAllEnvFiles(t *testing.T) {
 func TestDotenvShouldErrorWhenIncludingDependantDotenvs(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/dotenv/error_included_envs"),
 		task.WithSummary(true),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
 
-	err := e.Setup()
+	err := e.Setup(ctx)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "move the dotenv")
 }
@@ -1905,6 +1927,7 @@ func TestDotenvHasEnvVarInPath(t *testing.T) { // nolint:paralleltest // cannot 
 
 func TestTaskDotenvParseErrorMessage(t *testing.T) {
 	t.Parallel()
+	ctx, _ := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
 		task.WithDir("testdata/dotenv/parse_error"),
@@ -1913,7 +1936,7 @@ func TestTaskDotenvParseErrorMessage(t *testing.T) {
 	path, _ := filepath.Abs(filepath.Join(e.Dir, ".env-with-error"))
 	expected := fmt.Sprintf("error reading env file %s:", path)
 
-	err := e.Setup()
+	err := e.Setup(ctx)
 	require.ErrorContains(t, err, expected)
 }
 
@@ -2027,17 +2050,17 @@ func TestExitImmediately(t *testing.T) {
 
 	const dir = "testdata/exit_immediately"
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(true),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	require.Error(t, e.Run(t.Context(), &task.Call{Task: "default"}))
-	assert.Contains(t, buff.String(), `"this_should_fail": executable file not found in $PATH`)
+	require.Error(t, e.Run(ctx, &task.Call{Task: "default"}))
+	assert.Contains(t, buffer.buf.String(), `"this_should_fail": executable file not found in $PATH`)
 }
 
 func TestRunOnlyRunsJobsHashOnce(t *testing.T) {
@@ -2077,21 +2100,21 @@ func TestRunOnceSharedDeps(t *testing.T) {
 
 	const dir = "testdata/run_once_shared_deps"
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithForceAll(true),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build"}))
 
 	rx := regexp.MustCompile(`task: \[service-[a,b]:library:build\] echo "build library"`)
-	matches := rx.FindAllStringSubmatch(buff.String(), -1)
+	matches := rx.FindAllStringSubmatch(buffer.buf.String(), -1)
 	assert.Len(t, matches, 1)
-	assert.Contains(t, buff.String(), `task: [service-a:build] echo "build a"`)
-	assert.Contains(t, buff.String(), `task: [service-b:build] echo "build b"`)
+	assert.Contains(t, buffer.buf.String(), `task: [service-a:build] echo "build a"`)
+	assert.Contains(t, buffer.buf.String(), `task: [service-b:build] echo "build b"`)
 }
 
 func TestRunWhenChanged(t *testing.T) {
@@ -2099,35 +2122,35 @@ func TestRunWhenChanged(t *testing.T) {
 
 	const dir = "testdata/run_when_changed"
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithForceAll(true),
 		task.WithSilent(true),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "start"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "start"}))
 	expectedOutputOrder := strings.TrimSpace(`
 login server=fubar user=fubar
 login server=foo user=foo
 login server=bar user=bar
 `)
-	assert.Contains(t, buff.String(), expectedOutputOrder)
+	assert.Contains(t, buffer.buf.String(), expectedOutputOrder)
 }
 
 func TestDeferredCmds(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/deferred"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
 	expectedOutputOrder := strings.TrimSpace(`
 task: [task-2] echo 'cmd ran'
@@ -2140,43 +2163,43 @@ task-1 ran successfully
 task: [task-1] echo 'task-1 ran successfully'
 task-1 ran successfully
 `)
-	require.Error(t, e.Run(t.Context(), &task.Call{Task: "task-2"}))
-	assert.Contains(t, buff.String(), expectedOutputOrder)
-	buff.Reset()
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "parent"}))
-	assert.Contains(t, buff.String(), "child task deferred value-from-parent")
+	require.Error(t, e.Run(ctx, &task.Call{Task: "task-2"}))
+	assert.Contains(t, buffer.buf.String(), expectedOutputOrder)
+	buffer.buf.Reset()
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "parent"}))
+	assert.Contains(t, buffer.buf.String(), "child task deferred value-from-parent")
 }
 
 func TestExitCodeZero(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/exit_code"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "exit-zero"}))
-	assert.Equal(t, "FOO=bar - DYNAMIC_FOO=bar - EXIT_CODE=", strings.TrimSpace(buff.String()))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "exit-zero"}))
+	assert.Equal(t, "FOO=bar - DYNAMIC_FOO=bar - EXIT_CODE=", strings.TrimSpace(buffer.buf.String()))
 }
 
 func TestExitCodeOne(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/exit_code"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	require.Error(t, e.Run(t.Context(), &task.Call{Task: "exit-one"}))
-	assert.Equal(t, "FOO=bar - DYNAMIC_FOO=bar - EXIT_CODE=1", strings.TrimSpace(buff.String()))
+	require.Error(t, e.Run(ctx, &task.Call{Task: "exit-one"}))
+	assert.Equal(t, "FOO=bar - DYNAMIC_FOO=bar - EXIT_CODE=1", strings.TrimSpace(buffer.buf.String()))
 }
 
 func TestIgnoreNilElements(t *testing.T) {
@@ -2196,16 +2219,16 @@ func TestIgnoreNilElements(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(test.dir),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithSilent(true),
 			)
-			require.NoError(t, e.Setup())
-			require.NoError(t, e.Run(t.Context(), &task.Call{Task: "default"}))
-			assert.Equal(t, "string-slice-1\n", buff.String())
+			require.NoError(t, e.Setup(ctx))
+			require.NoError(t, e.Run(ctx, &task.Call{Task: "default"}))
+			assert.Equal(t, "string-slice-1\n", buffer.buf.String())
 		})
 	}
 }
@@ -2214,13 +2237,13 @@ func TestOutputGroup(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/output_group"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
 	expectedOutputOrder := strings.TrimSpace(`
 task: [hello] echo 'Hello!'
@@ -2232,57 +2255,57 @@ task: [bye] echo 'Bye!'
 Bye!
 ::endgroup::
 `)
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "bye"}))
-	t.Log(buff.String())
-	assert.Equal(t, strings.TrimSpace(buff.String()), expectedOutputOrder)
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "bye"}))
+	t.Log(buffer.buf.String())
+	assert.Equal(t, strings.TrimSpace(buffer.buf.String()), expectedOutputOrder)
 }
 
 func TestOutputGroupErrorOnlySwallowsOutputOnSuccess(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/output_group_error_only"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "passing"}))
-	t.Log(buff.String())
-	assert.Empty(t, buff.String())
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "passing"}))
+	t.Log(buffer.buf.String())
+	assert.Empty(t, buffer.buf.String())
 }
 
 func TestOutputGroupErrorOnlyShowsOutputOnFailure(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/output_group_error_only"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	require.Error(t, e.Run(t.Context(), &task.Call{Task: "failing"}))
-	t.Log(buff.String())
-	assert.Contains(t, "failing-output", strings.TrimSpace(buff.String()))
-	assert.NotContains(t, "passing", strings.TrimSpace(buff.String()))
+	require.Error(t, e.Run(ctx, &task.Call{Task: "failing"}))
+	t.Log(buffer.buf.String())
+	assert.Contains(t, "failing-output", strings.TrimSpace(buffer.buf.String()))
+	assert.NotContains(t, "passing", strings.TrimSpace(buffer.buf.String()))
 }
 
 func TestIncludedVars(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/include_with_vars"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
 	expectedOutputOrder := strings.TrimSpace(`
 task: [included1:task1] echo "VAR_1 is included1-var1"
@@ -2298,35 +2321,35 @@ VAR_1 is included-default-var1
 task: [included3:task1] echo "VAR_2 is included-default-var2"
 VAR_2 is included-default-var2
 `)
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "task1"}))
-	t.Log(buff.String())
-	assert.Equal(t, strings.TrimSpace(buff.String()), expectedOutputOrder)
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "task1"}))
+	t.Log(buffer.buf.String())
+	assert.Equal(t, strings.TrimSpace(buffer.buf.String()), expectedOutputOrder)
 }
 
 func TestIncludeWithVarsInInclude(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/include_with_vars_inside_include"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.Executor{
 		Dir:    dir,
-		Stdout: &buff,
-		Stderr: &buff,
+		Stdout: buffer,
+		Stderr: buffer,
 	}
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 }
 
 func TestIncludedVarsMultiLevel(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/include_with_vars_multi_level"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
 	expectedOutputOrder := strings.TrimSpace(`
 task: [lib:greet] echo 'Hello world'
@@ -2336,9 +2359,9 @@ Hello foo
 task: [bar:lib:greet] echo 'Hello bar'
 Hello bar
 `)
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "default"}))
-	t.Log(buff.String())
-	assert.Equal(t, expectedOutputOrder, strings.TrimSpace(buff.String()))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "default"}))
+	t.Log(buffer.buf.String())
+	assert.Equal(t, expectedOutputOrder, strings.TrimSpace(buffer.buf.String()))
 }
 
 func TestErrorCode(t *testing.T) {
@@ -2365,16 +2388,16 @@ func TestErrorCode(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(dir),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithSilent(true),
 			)
-			require.NoError(t, e.Setup())
+			require.NoError(t, e.Setup(ctx))
 
-			err := e.Run(t.Context(), &task.Call{Task: test.task})
+			err := e.Run(ctx, &task.Call{Task: test.task})
 			require.Error(t, err)
 			taskRunErr, ok := err.(*errors.TaskRunError)
 			assert.True(t, ok, "cannot cast returned error to *task.TaskRunError")
@@ -2385,11 +2408,11 @@ func TestErrorCode(t *testing.T) {
 
 func TestEvaluateSymlinksInPaths(t *testing.T) { // nolint:paralleltest // cannot run in parallel
 	const dir = "testdata/evaluate_symlinks_in_paths"
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir(dir),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(false),
 	)
 	tests := []struct {
@@ -2425,11 +2448,11 @@ func TestEvaluateSymlinksInPaths(t *testing.T) { // nolint:paralleltest // canno
 	}
 	for _, test := range tests { // nolint:paralleltest // cannot run in parallel
 		t.Run(test.name, func(t *testing.T) {
-			require.NoError(t, e.Setup())
-			err := e.Run(t.Context(), &task.Call{Task: test.task})
+			require.NoError(t, e.Setup(ctx))
+			err := e.Run(ctx, &task.Call{Task: test.task})
 			require.NoError(t, err)
-			assert.Equal(t, test.expected, strings.TrimSpace(buff.String()))
-			buff.Reset()
+			assert.Equal(t, test.expected, strings.TrimSpace(buffer.buf.String()))
+			buffer.buf.Reset()
 		})
 	}
 	err := os.RemoveAll(dir + "/.task")
@@ -2462,15 +2485,15 @@ func TestTaskfileWalk(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir(test.dir),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 			)
-			require.NoError(t, e.Setup())
-			require.NoError(t, e.Run(t.Context(), &task.Call{Task: "default"}))
-			assert.Equal(t, test.expected, buff.String())
+			require.NoError(t, e.Setup(ctx))
+			require.NoError(t, e.Run(ctx, &task.Call{Task: "default"}))
+			assert.Equal(t, test.expected, buffer.buf.String())
 		})
 	}
 }
@@ -2478,18 +2501,18 @@ func TestTaskfileWalk(t *testing.T) {
 func TestUserWorkingDirectory(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/user_working_dir"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
 	wd, err := os.Getwd()
 	require.NoError(t, err)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "default"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "default"}))
 	// Use filepath.ToSlash because USER_WORKING_DIR uses forward slashes on all platforms
-	assert.Equal(t, fmt.Sprintf("%s\n", filepath.ToSlash(wd)), buff.String())
+	assert.Equal(t, fmt.Sprintf("%s\n", filepath.ToSlash(wd)), buffer.buf.String())
 }
 
 func TestUserWorkingDirectoryWithIncluded(t *testing.T) {
@@ -2500,170 +2523,170 @@ func TestUserWorkingDirectoryWithIncluded(t *testing.T) {
 
 	wd = filepath.ToSlash(filepathext.SmartJoin(wd, "testdata/user_working_dir_with_includes/somedir"))
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/user_working_dir_with_includes"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
 	e.UserWorkingDir = wd
 
 	require.NoError(t, err)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "included:echo"}))
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "included:echo"}))
 	// Normalize path separators for cross-platform compatibility (Windows uses backslashes)
-	assert.Equal(t, fmt.Sprintf("%s\n", wd), normalizePathSeparators(buff.String()))
+	assert.Equal(t, fmt.Sprintf("%s\n", wd), normalizePathSeparators(buffer.buf.String()))
 }
 
 func TestPlatforms(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/platforms"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
-	require.NoError(t, e.Run(t.Context(), &task.Call{Task: "build-" + runtime.GOOS}))
-	assert.Equal(t, fmt.Sprintf("task: [build-%s] echo 'Running task on %s'\nRunning task on %s\n", runtime.GOOS, runtime.GOOS, runtime.GOOS), buff.String())
+	require.NoError(t, e.Setup(ctx))
+	require.NoError(t, e.Run(ctx, &task.Call{Task: "build-" + runtime.GOOS}))
+	assert.Equal(t, fmt.Sprintf("task: [build-%s] echo 'Running task on %s'\nRunning task on %s\n", runtime.GOOS, runtime.GOOS, runtime.GOOS), buffer.buf.String())
 }
 
 func TestPOSIXShellOptsGlobalLevel(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/shopts/global_level"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	err := e.Run(t.Context(), &task.Call{Task: "pipefail"})
+	err := e.Run(ctx, &task.Call{Task: "pipefail"})
 	require.NoError(t, err)
-	assert.Equal(t, "pipefail\ton\n", buff.String())
+	assert.Equal(t, "pipefail\ton\n", buffer.buf.String())
 }
 
 func TestPOSIXShellOptsTaskLevel(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/shopts/task_level"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	err := e.Run(t.Context(), &task.Call{Task: "pipefail"})
+	err := e.Run(ctx, &task.Call{Task: "pipefail"})
 	require.NoError(t, err)
-	assert.Equal(t, "pipefail\ton\n", buff.String())
+	assert.Equal(t, "pipefail\ton\n", buffer.buf.String())
 }
 
 func TestPOSIXShellOptsCommandLevel(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/shopts/command_level"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	err := e.Run(t.Context(), &task.Call{Task: "pipefail"})
+	err := e.Run(ctx, &task.Call{Task: "pipefail"})
 	require.NoError(t, err)
-	assert.Equal(t, "pipefail\ton\n", buff.String())
+	assert.Equal(t, "pipefail\ton\n", buffer.buf.String())
 }
 
 func TestBashShellOptsGlobalLevel(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/shopts/global_level"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	err := e.Run(t.Context(), &task.Call{Task: "globstar"})
+	err := e.Run(ctx, &task.Call{Task: "globstar"})
 	require.NoError(t, err)
-	assert.Equal(t, "globstar\ton\n", buff.String())
+	assert.Equal(t, "globstar\ton\n", buffer.buf.String())
 }
 
 func TestBashShellOptsTaskLevel(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/shopts/task_level"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	err := e.Run(t.Context(), &task.Call{Task: "globstar"})
+	err := e.Run(ctx, &task.Call{Task: "globstar"})
 	require.NoError(t, err)
-	assert.Equal(t, "globstar\ton\n", buff.String())
+	assert.Equal(t, "globstar\ton\n", buffer.buf.String())
 }
 
 func TestBashShellOptsCommandLevel(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/shopts/command_level"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	err := e.Run(t.Context(), &task.Call{Task: "globstar"})
+	err := e.Run(ctx, &task.Call{Task: "globstar"})
 	require.NoError(t, err)
-	assert.Equal(t, "globstar\ton\n", buff.String())
+	assert.Equal(t, "globstar\ton\n", buffer.buf.String())
 }
 
 func TestSplitArgs(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/split_args"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(true),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
 	vars := ast.NewVars()
 	vars.Set("CLI_ARGS", ast.Var{Value: "foo bar 'foo bar baz'"})
 
-	err := e.Run(t.Context(), &task.Call{Task: "default", Vars: vars})
+	err := e.Run(ctx, &task.Call{Task: "default", Vars: vars})
 	require.NoError(t, err)
-	assert.Equal(t, "3\n", buff.String())
+	assert.Equal(t, "3\n", buffer.buf.String())
 }
 
 func TestAbsPath(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/abs_path"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(true),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
-	err := e.Run(t.Context(), &task.Call{Task: "default"})
+	err := e.Run(ctx, &task.Call{Task: "default"})
 	require.NoError(t, err)
 
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	expected := filepath.Join(cwd, "bar") + "\n"
-	assert.Equal(t, expected, buff.String())
+	assert.Equal(t, expected, buffer.buf.String())
 }
 
 func TestSingleCmdDep(t *testing.T) {
@@ -2686,14 +2709,14 @@ func TestSingleCmdDep(t *testing.T) {
 func TestSilence(t *testing.T) {
 	t.Parallel()
 
-	var buff bytes.Buffer
+	ctx, buffer := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
 		task.WithDir("testdata/silent"),
-		task.WithStdout(&buff),
-		task.WithStderr(&buff),
+		task.WithStdout(buffer),
+		task.WithStderr(buffer),
 		task.WithSilent(false),
 	)
-	require.NoError(t, e.Setup())
+	require.NoError(t, e.Setup(ctx))
 
 	// First verify that the silent flag is in place.
 	fetchedTask, err := e.GetTask(&task.Call{Task: "task-test-silent-calls-chatty-silenced"})
@@ -2702,83 +2725,83 @@ func TestSilence(t *testing.T) {
 
 	// Then test the two basic cases where the task is silent or not.
 	// A silenced task.
-	err = e.Run(t.Context(), &task.Call{Task: "silent"})
+	err = e.Run(ctx, &task.Call{Task: "silent"})
 	require.NoError(t, err)
-	require.Empty(t, buff.String(), "siWhile running lent: Expected not see output, because the task is silent")
+	require.Empty(t, buffer.buf.String(), "siWhile running lent: Expected not see output, because the task is silent")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// A chatty (not silent) task.
-	err = e.Run(t.Context(), &task.Call{Task: "chatty"})
+	err = e.Run(ctx, &task.Call{Task: "chatty"})
 	require.NoError(t, err)
-	require.NotEmpty(t, buff.String(), "chWhile running atty: Expected to see output, because the task is not silent")
+	require.NotEmpty(t, buffer.buf.String(), "chWhile running atty: Expected to see output, because the task is not silent")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// Then test invoking the two task from other tasks.
 	// A silenced task that calls a chatty task.
-	err = e.Run(t.Context(), &task.Call{Task: "task-test-silent-calls-chatty-non-silenced"})
+	err = e.Run(ctx, &task.Call{Task: "task-test-silent-calls-chatty-non-silenced"})
 	require.NoError(t, err)
-	require.NotEmpty(t, buff.String(), "While running task-test-silent-calls-chatty-non-silenced: Expected to see output. The task is silenced, but the called task is not. Silence does not propagate to called tasks.")
+	require.NotEmpty(t, buffer.buf.String(), "While running task-test-silent-calls-chatty-non-silenced: Expected to see output. The task is silenced, but the called task is not. Silence does not propagate to called tasks.")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// A silent task that does a silent call to a chatty task.
-	err = e.Run(t.Context(), &task.Call{Task: "task-test-silent-calls-chatty-silenced"})
+	err = e.Run(ctx, &task.Call{Task: "task-test-silent-calls-chatty-silenced"})
 	require.NoError(t, err)
-	require.Empty(t, buff.String(), "While running task-test-silent-calls-chatty-silenced: Expected not to see output. The task calls chatty task, but the call is silenced.")
+	require.Empty(t, buffer.buf.String(), "While running task-test-silent-calls-chatty-silenced: Expected not to see output. The task calls chatty task, but the call is silenced.")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// A chatty task that does a call to a chatty task.
-	err = e.Run(t.Context(), &task.Call{Task: "task-test-chatty-calls-chatty-non-silenced"})
+	err = e.Run(ctx, &task.Call{Task: "task-test-chatty-calls-chatty-non-silenced"})
 	require.NoError(t, err)
-	require.NotEmpty(t, buff.String(), "While running task-test-chatty-calls-chatty-non-silenced: Expected to see output. Both caller and callee are chatty and not silenced.")
+	require.NotEmpty(t, buffer.buf.String(), "While running task-test-chatty-calls-chatty-non-silenced: Expected to see output. Both caller and callee are chatty and not silenced.")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// A chatty task that does a silenced call to a chatty task.
-	err = e.Run(t.Context(), &task.Call{Task: "task-test-chatty-calls-chatty-silenced"})
+	err = e.Run(ctx, &task.Call{Task: "task-test-chatty-calls-chatty-silenced"})
 	require.NoError(t, err)
-	require.NotEmpty(t, buff.String(), "While running task-test-chatty-calls-chatty-silenced: Expected to see output. Call to a chatty task is silenced, but the parent task is not.")
+	require.NotEmpty(t, buffer.buf.String(), "While running task-test-chatty-calls-chatty-silenced: Expected to see output. Call to a chatty task is silenced, but the parent task is not.")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// A chatty task with no cmd's of its own that does a silenced call to a chatty task.
-	err = e.Run(t.Context(), &task.Call{Task: "task-test-no-cmds-calls-chatty-silenced"})
+	err = e.Run(ctx, &task.Call{Task: "task-test-no-cmds-calls-chatty-silenced"})
 	require.NoError(t, err)
-	require.Empty(t, buff.String(), "While running task-test-no-cmds-calls-chatty-silenced: Expected not to see output. While the task itself is not silenced, it does not have any cmds and only does an invocation of a silenced task.")
+	require.Empty(t, buffer.buf.String(), "While running task-test-no-cmds-calls-chatty-silenced: Expected not to see output. While the task itself is not silenced, it does not have any cmds and only does an invocation of a silenced task.")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// A chatty task that does a silenced invocation of a task.
-	err = e.Run(t.Context(), &task.Call{Task: "task-test-chatty-calls-silenced-cmd"})
+	err = e.Run(ctx, &task.Call{Task: "task-test-chatty-calls-silenced-cmd"})
 	require.NoError(t, err)
-	require.Empty(t, buff.String(), "While running task-test-chatty-calls-silenced-cmd: Expected not to see output. While the task itself is not silenced, its call to the chatty task is silent.")
+	require.Empty(t, buffer.buf.String(), "While running task-test-chatty-calls-silenced-cmd: Expected not to see output. While the task itself is not silenced, its call to the chatty task is silent.")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// Then test calls via dependencies.
 	// A silent task that depends on a chatty task.
-	err = e.Run(t.Context(), &task.Call{Task: "task-test-is-silent-depends-on-chatty-non-silenced"})
+	err = e.Run(ctx, &task.Call{Task: "task-test-is-silent-depends-on-chatty-non-silenced"})
 	require.NoError(t, err)
-	require.NotEmpty(t, buff.String(), "While running task-test-is-silent-depends-on-chatty-non-silenced: Expected to see output. The task is silent and depends on a chatty task. Dependencies does not inherit silence.")
+	require.NotEmpty(t, buffer.buf.String(), "While running task-test-is-silent-depends-on-chatty-non-silenced: Expected to see output. The task is silent and depends on a chatty task. Dependencies does not inherit silence.")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// A silent task that depends on a silenced chatty task.
-	err = e.Run(t.Context(), &task.Call{Task: "task-test-is-silent-depends-on-chatty-silenced"})
+	err = e.Run(ctx, &task.Call{Task: "task-test-is-silent-depends-on-chatty-silenced"})
 	require.NoError(t, err)
-	require.Empty(t, buff.String(), "While running task-test-is-silent-depends-on-chatty-silenced: Expected not to see output. The task is silent and has a silenced dependency on a chatty task.")
+	require.Empty(t, buffer.buf.String(), "While running task-test-is-silent-depends-on-chatty-silenced: Expected not to see output. The task is silent and has a silenced dependency on a chatty task.")
 
-	buff.Reset()
+	buffer.buf.Reset()
 
 	// A chatty task that, depends on a silenced chatty task.
-	err = e.Run(t.Context(), &task.Call{Task: "task-test-is-chatty-depends-on-chatty-silenced"})
+	err = e.Run(ctx, &task.Call{Task: "task-test-is-chatty-depends-on-chatty-silenced"})
 	require.NoError(t, err)
-	require.Empty(t, buff.String(), "While running task-test-is-chatty-depends-on-chatty-silenced: Expected not to see output. The task is chatty but does not have commands and has a silenced dependency on a chatty task.")
+	require.Empty(t, buffer.buf.String(), "While running task-test-is-chatty-depends-on-chatty-silenced: Expected not to see output. The task is chatty but does not have commands and has a silenced dependency on a chatty task.")
 
-	buff.Reset()
+	buffer.buf.Reset()
 }
 
 func TestForce(t *testing.T) {
@@ -2817,16 +2840,16 @@ func TestForce(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir("testdata/force"),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithForce(tt.force),
 				task.WithForceAll(tt.forceAll),
 			)
-			require.NoError(t, e.Setup())
-			require.NoError(t, e.Run(t.Context(), &task.Call{Task: "task-with-dep"}))
+			require.NoError(t, e.Setup(ctx))
+			require.NoError(t, e.Run(ctx, &task.Call{Task: "task-with-dep"}))
 		})
 	}
 }
@@ -2881,21 +2904,21 @@ func TestWildcard(t *testing.T) {
 		t.Run(test.call, func(t *testing.T) {
 			t.Parallel()
 
-			var buff bytes.Buffer
+			ctx, buffer := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
 				task.WithDir("testdata/wildcards"),
-				task.WithStdout(&buff),
-				task.WithStderr(&buff),
+				task.WithStdout(buffer),
+				task.WithStderr(buffer),
 				task.WithSilent(true),
 				task.WithForce(true),
 			)
-			require.NoError(t, e.Setup())
+			require.NoError(t, e.Setup(ctx))
 			if test.wantErr {
-				require.Error(t, e.Run(t.Context(), &task.Call{Task: test.call}))
+				require.Error(t, e.Run(ctx, &task.Call{Task: test.call}))
 				return
 			}
-			require.NoError(t, e.Run(t.Context(), &task.Call{Task: test.call}))
-			assert.Equal(t, test.expectedOutput, buff.String())
+			require.NoError(t, e.Run(ctx, &task.Call{Task: test.call}))
+			assert.Equal(t, test.expectedOutput, buffer.buf.String())
 		})
 	}
 }

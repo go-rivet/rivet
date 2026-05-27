@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/templater"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 )
@@ -16,11 +15,12 @@ type Output interface {
 type CloseFunc func(err error) error
 
 // Build the Output for the requested ast.Output.
-func BuildFor(o *ast.Output, logger *logger.Logger) (Output, error) {
-	if logger.IsStructured() {
-		// Capture stdout/stderr for structured logging.
-		return Logger{}, nil
-	}
+func BuildFor(o *ast.Output) (Output, error) {
+	// if rlog.Outf(ctx, rlog.IsStructured() {
+	// 	// Capture stdout/stderr for structured logging.
+	// 	return Logger{}, nil
+	// }
+	// FIXME: capture for structured logging
 	switch o.Name {
 	case "interleaved", "":
 		if err := checkOutputGroupUnset(o); err != nil {
@@ -37,7 +37,7 @@ func BuildFor(o *ast.Output, logger *logger.Logger) (Output, error) {
 		if err := checkOutputGroupUnset(o); err != nil {
 			return nil, err
 		}
-		return NewPrefixed(logger), nil
+		return NewPrefixed(), nil
 	default:
 		return nil, fmt.Errorf(`task: output style %q not recognized`, o.Name)
 	}

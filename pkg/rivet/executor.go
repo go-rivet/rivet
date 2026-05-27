@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-rivet/rivet/internal/concurrent"
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/output"
 	"github.com/go-rivet/rivet/internal/sort"
 	"github.com/go-rivet/rivet/internal/stringutil"
@@ -25,6 +24,7 @@ type (
 	// An Executor is used for processing Taskfile(s) and executing the task(s)
 	// within them.
 	Executor struct {
+		ctx context.Context
 		// Flags
 		Dir                 string
 		Entrypoint          string
@@ -64,7 +64,6 @@ type (
 
 		// Internal
 		Taskfile           *ast.Taskfile
-		Logger             *logger.Logger
 		Compiler           *Compiler
 		Output             output.Output
 		OutputStyle        ast.Output
@@ -98,7 +97,6 @@ func NewExecutor(opts ...ExecutorOption) *Executor {
 		Stdin:                os.Stdin,
 		Stdout:               os.Stdout,
 		Stderr:               os.Stderr,
-		Logger:               nil,
 		Compiler:             nil,
 		Output:               nil,
 		OutputStyle:          ast.Output{},

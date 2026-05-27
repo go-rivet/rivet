@@ -1,7 +1,7 @@
 package rivet_test
 
 import (
-	"bytes"
+	"log/slog"
 	"path/filepath"
 	"testing"
 
@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 
 	task "github.com/go-rivet/rivet/pkg/rivet"
 )
@@ -100,12 +101,12 @@ func (tt *FormatterTest) run(t *testing.T) {
 	t.Helper()
 	f := func(t *testing.T) {
 		t.Helper()
-		var buf bytes.Buffer
+		var buffer SyncBuffer
 
 		opts := append(
 			tt.executorOpts,
-			task.WithStdout(&buf),
-			task.WithStderr(&buf),
+			task.WithStdout(&buffer),
+			task.WithStderr(&buffer),
 		)
 
 		// Set up the task executor
@@ -117,11 +118,22 @@ func (tt *FormatterTest) run(t *testing.T) {
 			goldie.WithEqualFn(NormalizedEqual),
 		)
 
+		// Setup logging.
+		logOpts := &slog.HandlerOptions{Level: slog.LevelInfo}
+		if e.Silent {
+			logOpts.Level = slog.LevelError
+		} else if e.Verbose {
+			logOpts.Level = slog.LevelDebug
+		}
+		logHandler := rlog.NewCliHandler(&buffer, &buffer, false, logOpts)
+		baseCtx := t.Context()
+		ctx := rlog.WithContext(baseCtx, logHandler)
+
 		// Call setup and check for errors
-		if err := e.Setup(); tt.wantSetupError {
+		if err := e.Setup(ctx); tt.wantSetupError {
 			require.Error(t, err)
 			tt.writeFixtureErrSetup(t, g, err)
-			tt.writeFixtureBuffer(t, g, buf)
+			tt.writeFixtureBuffer(t, g, buffer.buf)
 			return
 		} else {
 			require.NoError(t, err)
@@ -137,13 +149,13 @@ func (tt *FormatterTest) run(t *testing.T) {
 		if _, err := e.ListTasks(tt.listOptions); tt.wantListError {
 			require.Error(t, err)
 			tt.writeFixtureErrList(t, g, err)
-			tt.writeFixtureBuffer(t, g, buf)
+			tt.writeFixtureBuffer(t, g, buffer.buf)
 			return
 		} else {
 			require.NoError(t, err)
 		}
 
-		tt.writeFixtureBuffer(t, g, buf)
+		tt.writeFixtureBuffer(t, g, buffer.buf)
 	}
 
 	// Run the test (with a name if it has one)

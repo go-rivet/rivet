@@ -10,6 +10,8 @@ import (
 
 // Status returns an error if any the of given tasks is not up-to-date
 func (e *Executor) Status(ctx context.Context, calls ...*Call) error {
+	e.ctx = ctx
+
 	for _, call := range calls {
 
 		// Compile the task
@@ -29,7 +31,6 @@ func (e *Executor) Status(ctx context.Context, calls ...*Call) error {
 			fingerprint.WithMethod(method),
 			fingerprint.WithTempDir(e.TempDir.Fingerprint),
 			fingerprint.WithDry(e.Dry),
-			fingerprint.WithLogger(e.Logger),
 		)
 		if err != nil {
 			return err

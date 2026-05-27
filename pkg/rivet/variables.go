@@ -34,7 +34,7 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 		return nil, err
 	}
 
-	vars, err := e.Compiler.FastGetVariables(origTask, call)
+	vars, err := e.Compiler.FastGetVariables(e.ctx, origTask, call)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func (e *Executor) taskEnv(t *ast.Task, origTaskEnv *ast.Vars, cache *templater.
 				taskEnv.Set(k, ast.Var{Value: v.Value})
 				continue
 			}
-			static, err := e.Compiler.HandleDynamicVar(v, t.Dir, env.GetFromVars(taskEnv))
+			static, err := e.Compiler.HandleDynamicVar(e.ctx, v, t.Dir, env.GetFromVars(taskEnv))
 			if err != nil {
 				return nil, err
 			}
@@ -130,9 +130,9 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 
 	var vars *ast.Vars
 	if evaluateShVars {
-		vars, err = e.Compiler.GetVariables(origTask, call)
+		vars, err = e.Compiler.GetVariables(e.ctx, origTask, call)
 	} else {
-		vars, err = e.Compiler.FastGetVariables(origTask, call)
+		vars, err = e.Compiler.FastGetVariables(e.ctx, origTask, call)
 	}
 	if err != nil {
 		return nil, err

@@ -69,9 +69,9 @@ run: build
 
 ## test: Run all project unit tests natively with race detection
 test:
-	@echo "Running tests..."
-#	gotestsum --format short-verbose -- ./... 
-	gotestsum --format short-verbose -- -count=1 ./... 
+	@echo "Running tests..." 
+#	gotestsum --format short-verbose -- -failfast -count=1 -run="$(TEST_NAME)" ./...
+	gotestsum --format short-verbose -- -count=1 -run="$(TEST_NAME)" ./...
 
 ## test-all: Run unit tests and other integration/e2e tests
 test-all:
@@ -130,6 +130,9 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@fgrep -h "##" $(MAKEFILE_LIST) | fgrep -v fgrep | sed -e 's/## //' | awk -F: '{printf "  %-15s %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Examples:"
+	@echo "  make test TEST_NAME=TestFoo"
 
 
 

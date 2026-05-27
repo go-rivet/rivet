@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/output"
 	"github.com/go-rivet/rivet/internal/templater"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
@@ -122,11 +121,7 @@ func TestGroupErrorOnlyShowsOutputOnError(t *testing.T) {
 
 func TestPrefixed(t *testing.T) { //nolint:paralleltest // cannot run in parallel
 	var b bytes.Buffer
-	l := logger.NewLogger(logger.LoggerOptions{
-		Color: false,
-	})
-
-	var o output.Output = output.NewPrefixed(l)
+	var o output.Output = output.NewPrefixed()
 	w, _, cleanup := o.WrapWriter(&b, io.Discard, "prefix", nil)
 
 	t.Run("simple use cases", func(t *testing.T) { //nolint:paralleltest // cannot run in parallel
@@ -149,43 +144,5 @@ func TestPrefixed(t *testing.T) { //nolint:paralleltest // cannot run in paralle
 
 		require.NoError(t, cleanup(nil))
 		assert.Equal(t, "[prefix] Test!\n", b.String())
-	})
-}
-
-func TestPrefixedWithColor(t *testing.T) {
-	t.Parallel()
-
-	logger.NoColor = false
-
-	var b bytes.Buffer
-	l := logger.NewLogger(logger.LoggerOptions{
-		Color: true,
-	})
-
-	var o output.Output = output.NewPrefixed(l)
-
-	writers := make([]io.Writer, 16)
-	for i := range writers {
-		writers[i], _, _ = o.WrapWriter(&b, io.Discard, fmt.Sprintf("prefix-%d", i), nil)
-	}
-
-	t.Run("colors should loop", func(t *testing.T) {
-		t.Parallel()
-
-		for i, w := range writers {
-			b.Reset()
-
-			color := output.PrefixColorSequence[i%len(output.PrefixColorSequence)]
-
-			var prefix bytes.Buffer
-			l.FOutf(&prefix, color, fmt.Sprintf("prefix-%d", i))
-
-			_, _ = fmt.Fprintln(w, "foo\nbar")
-			assert.Equal(
-				t,
-				fmt.Sprintf("[%s] foo\n[%s] bar\n", prefix.String(), prefix.String()),
-				b.String(),
-			)
-		}
 	})
 }

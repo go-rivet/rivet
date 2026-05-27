@@ -43,10 +43,10 @@ You can fetch and extract a specific asset directly through the terminal. Replac
 ```bash
 # Define your target variables
 VERSION="v0.2.0"
-PLATFORM="linux_amd64"
+PLATFORM="linux-amd64"
 
 # Download, extract, and make the binary executable
-curl -sSL "https://github.com\({VERSION}/rivet_\){PLATFORM}.tar.gz" | tar -xz
+curl -sSL https://github.com/go-rivet/rivet/releases/download/${VERSION}/rivet-${PLATFORM}.tar.gz | tar -xz
 chmod +x rivet
 mv rivet /usr/local/bin/
 ```

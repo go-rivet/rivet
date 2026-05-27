@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,10 +14,10 @@ import (
 	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/filepathext"
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/templater"
 	"github.com/go-rivet/rivet/internal/version"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
 type Compiler struct {
@@ -27,25 +29,23 @@ type Compiler struct {
 	TaskfileEnv  *ast.Vars
 	TaskfileVars *ast.Vars
 
-	Logger *logger.Logger
-
 	dynamicCache   map[string]string
 	muDynamicCache sync.Mutex
 }
 
-func (c *Compiler) GetTaskfileVariables() (*ast.Vars, error) {
-	return c.getVariables(nil, nil, true)
+func (c *Compiler) GetTaskfileVariables(ctx context.Context) (*ast.Vars, error) {
+	return c.getVariables(ctx, nil, nil, true)
 }
 
-func (c *Compiler) GetVariables(t *ast.Task, call *Call) (*ast.Vars, error) {
-	return c.getVariables(t, call, true)
+func (c *Compiler) GetVariables(ctx context.Context, t *ast.Task, call *Call) (*ast.Vars, error) {
+	return c.getVariables(ctx, t, call, true)
 }
 
-func (c *Compiler) FastGetVariables(t *ast.Task, call *Call) (*ast.Vars, error) {
-	return c.getVariables(t, call, false)
+func (c *Compiler) FastGetVariables(ctx context.Context, t *ast.Task, call *Call) (*ast.Vars, error) {
+	return c.getVariables(ctx, t, call, false)
 }
 
-func (c *Compiler) getVariables(t *ast.Task, call *Call, evaluateShVars bool) (*ast.Vars, error) {
+func (c *Compiler) getVariables(ctx context.Context, t *ast.Task, call *Call, evaluateShVars bool) (*ast.Vars, error) {
 	result := env.GetEnviron()
 	specialVars, err := c.getSpecialVars(t, call)
 	if err != nil {
@@ -82,7 +82,7 @@ func (c *Compiler) getVariables(t *ast.Task, call *Call, evaluateShVars bool) (*
 				return nil
 			}
 			// If the variable is dynamic, we need to resolve it first
-			static, err := c.HandleDynamicVar(newVar, dir, env.GetFromVars(result))
+			static, err := c.HandleDynamicVar(ctx, newVar, dir, env.GetFromVars(result))
 			if err != nil {
 				return err
 			}
@@ -146,7 +146,7 @@ func (c *Compiler) getVariables(t *ast.Task, call *Call, evaluateShVars bool) (*
 	return result, nil
 }
 
-func (c *Compiler) HandleDynamicVar(v ast.Var, dir string, e []string) (string, error) {
+func (c *Compiler) HandleDynamicVar(ctx context.Context, v ast.Var, dir string, e []string) (string, error) {
 	c.muDynamicCache.Lock()
 	defer c.muDynamicCache.Unlock()
 
@@ -167,15 +167,20 @@ func (c *Compiler) HandleDynamicVar(v ast.Var, dir string, e []string) (string, 
 		dir = v.Dir
 	}
 
+	var stderr io.Writer = os.Stderr
+	if ext, ok := slog.Default().Handler().(*rlog.RlogHandler); ok {
+		stderr = ext.Stderr
+	}
+
 	var stdout bytes.Buffer
 	opts := &execext.RunCommandOptions{
 		Command: *v.Sh,
 		Dir:     dir,
 		Stdout:  &stdout,
-		Stderr:  c.Logger.Stderr,
+		Stderr:  stderr,
 		Env:     e,
 	}
-	if err := execext.RunCommand(context.Background(), opts); err != nil {
+	if err := execext.RunCommand(ctx, opts); err != nil {
 		return "", fmt.Errorf(`task: Command "%s" failed: %s`, opts.Command, err)
 	}
 
@@ -185,7 +190,7 @@ func (c *Compiler) HandleDynamicVar(v ast.Var, dir string, e []string) (string, 
 	result = strings.TrimSuffix(result, "\n")
 
 	c.dynamicCache[*v.Sh] = result
-	c.Logger.VerboseErrf(logger.Magenta, "task: dynamic variable: %q result: %q\n", *v.Sh, result)
+	rlog.Debugf(ctx, "task: dynamic variable: %q result: %q\n", *v.Sh, result)
 
 	return result, nil
 }

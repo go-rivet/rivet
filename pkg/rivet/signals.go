@@ -5,7 +5,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/go-rivet/rivet/internal/logger"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
 const maxInterruptSignals = 3
@@ -22,11 +22,11 @@ func (e *Executor) InterceptInterruptSignals() {
 			sig := <-ch
 
 			if i+1 >= maxInterruptSignals {
-				e.Logger.Errorf("task: Signal received for the third time: %q. Forcing shutdown\n", sig)
+				rlog.Errorf(e.ctx, "task: Signal received for the third time: %q. Forcing shutdown\n", sig)
 				os.Exit(1)
 			}
 
-			e.Logger.Outf(logger.Yellow, "task: Signal received: %q\n", sig)
+			rlog.Outf(e.ctx, rlog.Yellow, "task: Signal received: %q\n", sig)
 		}
 	}()
 }

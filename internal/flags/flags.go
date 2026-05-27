@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/go-rivet/rivet/internal/env"
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/sort"
 	task "github.com/go-rivet/rivet/pkg/rivet"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
@@ -160,13 +159,9 @@ func init() {
 	if !colorExplicitlySet {
 		if os.Getenv("NO_COLOR") != "" {
 			Color = false
-			logger.NoColor = true
 		} else if os.Getenv("FORCE_COLOR") != "" || isCI() {
 			Color = true
-			logger.NoColor = false // Force colors even without TTY
 		}
-	} else {
-		logger.NoColor = !Color
 	}
 }
 

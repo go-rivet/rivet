@@ -5,9 +5,9 @@ import (
 
 	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/execext"
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
 // ErrPreconditionFailed is returned when a precondition fails
@@ -22,7 +22,7 @@ func (e *Executor) areTaskPreconditionsMet(ctx context.Context, t *ast.Task) (bo
 		})
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
-				e.Logger.Errf(logger.Magenta, "task: %s\n", p.Msg)
+				rlog.Errf(ctx, rlog.Magenta, "task: %s\n", p.Msg)
 			}
 			return false, ErrPreconditionFailed
 		}

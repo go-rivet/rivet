@@ -3,13 +3,13 @@ package errors
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/go-rivet/rivet/pkg/rlog"
 	"go.yaml.in/yaml/v3"
-
-	"github.com/go-rivet/rivet/internal/logger"
 )
 
 type (
@@ -41,27 +41,29 @@ func NewTaskfileDecodeError(err error, node *yaml.Node) *TaskfileDecodeError {
 func (err *TaskfileDecodeError) Error() string {
 	buf := &bytes.Buffer{}
 
+	ctx := context.Background() // FIXME: get the current test context, somehow.
+
 	// Print the error message
 	if err.Message != "" {
-		logger.RedString("err:  %s", err.Message)
+		rlog.Outf(ctx, rlog.Red, "err:  %s", err.Message)
 	} else {
 		// Extract the errors from the TypeError
 		te := &yaml.TypeError{}
 		if errors.As(err.Err, &te) {
 			if len(te.Errors) > 1 {
-				logger.RedString("errs:")
+				rlog.Outf(ctx, rlog.Red, "errs:")
 				for _, message := range te.Errors {
-					logger.RedString("- %s", message)
+					rlog.Outf(ctx, rlog.Red, "- %s", message)
 				}
 			} else {
-				logger.RedString("err:  %s", te.Errors[0])
+				rlog.Outf(ctx, rlog.Red, "err:  %s", te.Errors[0])
 			}
 		} else {
 			// Otherwise print the error message normally
-			logger.RedString("err:  %s", err.Err)
+			rlog.Outf(ctx, rlog.Red, "err:  %s", err.Err)
 		}
 	}
-	logger.RedString("file: %s:%d:%d", err.Location, err.Line, err.Column)
+	rlog.Outf(ctx, rlog.Red, "file: %s:%d:%d", err.Location, err.Line, err.Column)
 	fmt.Fprint(buf, err.Snippet)
 	return buf.String()
 }

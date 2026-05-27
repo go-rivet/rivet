@@ -5,6 +5,7 @@ tasks:
     sources:
       - ./source.txt
     status:
+      - echo "foo"
       - echo "{{.CHECKSUM}}"
 
   build-ts:

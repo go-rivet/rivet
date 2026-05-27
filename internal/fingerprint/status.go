@@ -5,18 +5,15 @@ import (
 
 	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/execext"
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
 type StatusChecker struct {
-	logger *logger.Logger
 }
 
-func NewStatusChecker(logger *logger.Logger) StatusCheckable {
-	return &StatusChecker{
-		logger: logger,
-	}
+func NewStatusChecker() StatusCheckable {
+	return &StatusChecker{}
 }
 
 func (checker *StatusChecker) IsUpToDate(ctx context.Context, t *ast.Task) (bool, error) {
@@ -27,10 +24,10 @@ func (checker *StatusChecker) IsUpToDate(ctx context.Context, t *ast.Task) (bool
 			Env:     env.Get(t),
 		})
 		if err != nil {
-			checker.logger.VerboseOutf(logger.Yellow, "task: status command %s exited non-zero: %s\n", s, err)
+			rlog.Debugf(ctx, "task: status command %s exited non-zero: %s\n", s, err)
 			return false, nil
 		}
-		checker.logger.VerboseOutf(logger.Yellow, "task: status command %s exited zero\n", s)
+		rlog.Debugf(ctx, "task: status command %s exited zero\n", s)
 	}
 	return true, nil
 }

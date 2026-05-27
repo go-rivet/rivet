@@ -1,51 +1,52 @@
 package summary
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
-func PrintTasks(l *logger.Logger, t *ast.Taskfile, c []string) {
+func PrintTasks(ctx context.Context, t *ast.Taskfile, c []string) {
 	for i, call := range c {
-		PrintSpaceBetweenSummaries(l, i)
+		PrintSpaceBetweenSummaries(ctx, i)
 		if task, ok := t.Tasks.Get(call); ok {
-			PrintTask(l, task)
+			PrintTask(ctx, task)
 		}
 	}
 }
 
-func PrintSpaceBetweenSummaries(l *logger.Logger, i int) {
+func PrintSpaceBetweenSummaries(ctx context.Context, i int) {
 	spaceRequired := i > 0
 	if !spaceRequired {
 		return
 	}
 
-	l.OutfDirect(logger.Default, "\n")
-	l.OutfDirect(logger.Default, "\n")
+	rlog.OutRawf(ctx, rlog.Default, "\n")
+	rlog.OutRawf(ctx, rlog.Default, "\n")
 }
 
-func PrintTask(l *logger.Logger, t *ast.Task) {
-	printTaskName(l, t)
-	printTaskDescribingText(t, l)
-	printTaskVars(l, t)
-	printTaskEnv(l, t)
-	printTaskRequires(l, t)
-	printTaskDependencies(l, t)
-	printTaskAliases(l, t)
-	printTaskCommands(l, t)
+func PrintTask(ctx context.Context, t *ast.Task) {
+	printTaskName(ctx, t)
+	printTaskDescribingText(ctx, t)
+	printTaskVars(ctx, t)
+	printTaskEnv(ctx, t)
+	printTaskRequires(ctx, t)
+	printTaskDependencies(ctx, t)
+	printTaskAliases(ctx, t)
+	printTaskCommands(ctx, t)
 }
 
-func printTaskDescribingText(t *ast.Task, l *logger.Logger) {
+func printTaskDescribingText(ctx context.Context, t *ast.Task) {
 	if hasSummary(t) {
-		printTaskSummary(l, t)
+		printTaskSummary(ctx, t)
 	} else if hasDescription(t) {
-		printTaskDescription(l, t)
+		printTaskDescription(ctx, t)
 	} else {
-		printNoDescriptionOrSummary(l)
+		printNoDescriptionOrSummary(ctx)
 	}
 }
 
@@ -53,31 +54,31 @@ func hasSummary(t *ast.Task) bool {
 	return t.Summary != ""
 }
 
-func printTaskSummary(l *logger.Logger, t *ast.Task) {
+func printTaskSummary(ctx context.Context, t *ast.Task) {
 	lines := strings.Split(t.Summary, "\n")
 	for i, line := range lines {
 		notLastLine := i+1 < len(lines)
 		if notLastLine || line != "" {
-			l.OutfDirect(logger.Default, "%s\n", line)
+			rlog.OutRawf(ctx, rlog.Default, "%s\n", line)
 		}
 	}
 }
 
-func printTaskName(l *logger.Logger, t *ast.Task) {
-	l.OutfDirect(logger.Default, "task: ")
-	l.OutfDirect(logger.Green, "%s\n", t.Name())
-	l.OutfDirect(logger.Default, "\n")
+func printTaskName(ctx context.Context, t *ast.Task) {
+	rlog.OutRawf(ctx, rlog.Default, "task: ")
+	rlog.OutRawf(ctx, rlog.Green, "%s\n", t.Name())
+	rlog.OutRawf(ctx, rlog.Default, "\n")
 }
 
-func printTaskAliases(l *logger.Logger, t *ast.Task) {
+func printTaskAliases(ctx context.Context, t *ast.Task) {
 	if len(t.Aliases) == 0 {
 		return
 	}
-	l.OutfDirect(logger.Default, "\n")
-	l.OutfDirect(logger.Default, "aliases:\n")
+	rlog.OutRawf(ctx, rlog.Default, "\n")
+	rlog.OutRawf(ctx, rlog.Default, "aliases:\n")
 	for _, alias := range t.Aliases {
-		l.OutfDirect(logger.Default, " - ")
-		l.OutfDirect(logger.Cyan, "%s\n", alias)
+		rlog.OutRawf(ctx, rlog.Default, " - ")
+		rlog.OutRawf(ctx, rlog.Cyan, "%s\n", alias)
 	}
 }
 
@@ -85,46 +86,46 @@ func hasDescription(t *ast.Task) bool {
 	return t.Desc != ""
 }
 
-func printTaskDescription(l *logger.Logger, t *ast.Task) {
-	l.OutfDirect(logger.Default, "%s\n", t.Desc)
+func printTaskDescription(ctx context.Context, t *ast.Task) {
+	rlog.OutRawf(ctx, rlog.Default, "%s\n", t.Desc)
 }
 
-func printNoDescriptionOrSummary(l *logger.Logger) {
-	l.OutfDirect(logger.Default, "(task does not have description or summary)\n")
+func printNoDescriptionOrSummary(ctx context.Context) {
+	rlog.OutRawf(ctx, rlog.Default, "(task does not have description or summary)\n")
 }
 
-func printTaskDependencies(l *logger.Logger, t *ast.Task) {
+func printTaskDependencies(ctx context.Context, t *ast.Task) {
 	if len(t.Deps) == 0 {
 		return
 	}
 
-	l.OutfDirect(logger.Default, "\n")
-	l.OutfDirect(logger.Default, "dependencies:\n")
+	rlog.OutRawf(ctx, rlog.Default, "\n")
+	rlog.OutRawf(ctx, rlog.Default, "dependencies:\n")
 
 	for _, d := range t.Deps {
-		l.OutfDirect(logger.Default, " - %s\n", d.Task)
+		rlog.OutRawf(ctx, rlog.Default, " - %s\n", d.Task)
 	}
 }
 
-func printTaskCommands(l *logger.Logger, t *ast.Task) {
+func printTaskCommands(ctx context.Context, t *ast.Task) {
 	if len(t.Cmds) == 0 {
 		return
 	}
 
-	l.OutfDirect(logger.Default, "\n")
-	l.OutfDirect(logger.Default, "commands:\n")
+	rlog.OutRawf(ctx, rlog.Default, "\n")
+	rlog.OutRawf(ctx, rlog.Default, "commands:\n")
 	for _, c := range t.Cmds {
 		isCommand := c.Cmd != ""
-		l.OutfDirect(logger.Default, " - ")
+		rlog.OutRawf(ctx, rlog.Default, " - ")
 		if isCommand {
-			l.OutfDirect(logger.Yellow, "%s\n", c.Cmd)
+			rlog.OutRawf(ctx, rlog.Yellow, "%s\n", c.Cmd)
 		} else {
-			l.OutfDirect(logger.Green, "Task: %s\n", c.Task)
+			rlog.OutRawf(ctx, rlog.Green, "Task: %s\n", c.Task)
 		}
 	}
 }
 
-func printTaskVars(l *logger.Logger, t *ast.Task) {
+func printTaskVars(ctx context.Context, t *ast.Task) {
 	if t.Vars == nil || t.Vars.Len() == 0 {
 		return
 	}
@@ -150,19 +151,19 @@ func printTaskVars(l *logger.Logger, t *ast.Task) {
 		return
 	}
 
-	l.OutfDirect(logger.Default, "\n")
-	l.OutfDirect(logger.Default, "vars:\n")
+	rlog.OutRawf(ctx, rlog.Default, "\n")
+	rlog.OutRawf(ctx, rlog.Default, "vars:\n")
 
 	for key, value := range t.Vars.All() {
 		// Only display variables that are not from OS environment or Taskfile env
 		if !isEnvVar(key, osEnvVars) && !taskfileEnvVars[key] {
 			formattedValue := formatVarValue(value)
-			l.OutfDirect(logger.Yellow, "  %s: %s\n", key, formattedValue)
+			rlog.OutRawf(ctx, rlog.Yellow, "  %s: %s\n", key, formattedValue)
 		}
 	}
 }
 
-func printTaskEnv(l *logger.Logger, t *ast.Task) {
+func printTaskEnv(ctx context.Context, t *ast.Task) {
 	if t.Env == nil || t.Env.Len() == 0 {
 		return
 	}
@@ -181,14 +182,14 @@ func printTaskEnv(l *logger.Logger, t *ast.Task) {
 		return
 	}
 
-	l.OutfDirect(logger.Default, "\n")
-	l.OutfDirect(logger.Default, "env:\n")
+	rlog.OutRawf(ctx, rlog.Default, "\n")
+	rlog.OutRawf(ctx, rlog.Default, "env:\n")
 
 	for key, value := range t.Env.All() {
 		// Only display variables that are not from OS environment
 		if !isEnvVar(key, envVars) {
 			formattedValue := formatVarValue(value)
-			l.OutfDirect(logger.Yellow, "  %s: %s\n", key, formattedValue)
+			rlog.OutRawf(ctx, rlog.Yellow, "  %s: %s\n", key, formattedValue)
 		}
 	}
 }
@@ -237,28 +238,28 @@ func formatMap(m map[string]any, indent int) string {
 	return result.String()
 }
 
-func printTaskRequires(l *logger.Logger, t *ast.Task) {
+func printTaskRequires(ctx context.Context, t *ast.Task) {
 	if t.Requires == nil || len(t.Requires.Vars) == 0 {
 		return
 	}
 
-	l.OutfDirect(logger.Default, "\n")
-	l.OutfDirect(logger.Default, "requires:\n")
-	l.OutfDirect(logger.Default, "  vars:\n")
+	rlog.OutRawf(ctx, rlog.Default, "\n")
+	rlog.OutRawf(ctx, rlog.Default, "requires:\n")
+	rlog.OutRawf(ctx, rlog.Default, "  vars:\n")
 
 	for _, v := range t.Requires.Vars {
 		if v.Enum != nil && len(v.Enum.Value) > 0 {
-			l.OutfDirect(logger.Yellow, "    - %s:\n", v.Name)
-			l.OutfDirect(logger.Yellow, "        enum:\n")
+			rlog.OutRawf(ctx, rlog.Yellow, "    - %s:\n", v.Name)
+			rlog.OutRawf(ctx, rlog.Yellow, "        enum:\n")
 			for _, enumValue := range v.Enum.Value {
-				l.OutfDirect(logger.Yellow, "          - %s\n", enumValue)
+				rlog.OutRawf(ctx, rlog.Yellow, "          - %s\n", enumValue)
 			}
 		} else if v.Enum != nil && v.Enum.Ref != "" {
-			l.OutfDirect(logger.Yellow, "    - %s:\n", v.Name)
-			l.OutfDirect(logger.Yellow, "        enum:\n")
-			l.OutfDirect(logger.Yellow, "          ref: %s\n", v.Enum.Ref)
+			rlog.OutRawf(ctx, rlog.Yellow, "    - %s:\n", v.Name)
+			rlog.OutRawf(ctx, rlog.Yellow, "        enum:\n")
+			rlog.OutRawf(ctx, rlog.Yellow, "          ref: %s\n", v.Enum.Ref)
 		} else {
-			l.OutfDirect(logger.Yellow, "    - %s\n", v.Name)
+			rlog.OutRawf(ctx, rlog.Yellow, "    - %s\n", v.Name)
 		}
 	}
 }

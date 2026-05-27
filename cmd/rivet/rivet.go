@@ -4,41 +4,48 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
 
 	"github.com/spf13/pflag"
 
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/internal/flags"
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/version"
 	task "github.com/go-rivet/rivet/pkg/rivet"
 	"github.com/go-rivet/rivet/pkg/rivet/args"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
 func main() {
-	if err := run(); err != nil {
-		l := logger.NewLogger(logger.LoggerOptions{
-			Stdout:  os.Stdout,
-			Stderr:  os.Stderr,
-			Verbose: flags.Verbose,
-			Color:   flags.Color,
-		})
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	rlog.Init(rlog.RlogOptions{
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		// FIXME: log level
+		// FIXME: format
+		Color: flags.Color,
+	})
+
+	if err := run(ctx); err != nil {
 		if err, ok := err.(*errors.TaskRunError); ok && flags.ExitCode {
 			emitCIErrorAnnotation(err)
-			l.Errf(logger.Red, "%v\n", err)
+			rlog.Errorf(ctx, "%v\n", err)
 			os.Exit(err.TaskExitCode())
 		}
 		if err, ok := err.(errors.TaskError); ok {
 			emitCIErrorAnnotation(err)
-			l.Errf(logger.Red, "%v\n", err)
+			rlog.Errorf(ctx, "%v\n", err)
 			os.Exit(err.Code())
 		}
 		emitCIErrorAnnotation(err)
-		l.Errf(logger.Red, "%v\n", err)
+		rlog.Errorf(ctx, "%v\n", err)
 		os.Exit(errors.CodeUnknown)
 	}
 	os.Exit(errors.CodeOk)
@@ -56,14 +63,7 @@ func emitCIErrorAnnotation(err error) {
 	_, _ = fmt.Fprintf(os.Stdout, "::error title=Task failed::%v\n", err)
 }
 
-func run() error {
-	log := logger.NewLogger(logger.LoggerOptions{
-		Stdout:  os.Stdout,
-		Stderr:  os.Stderr,
-		Verbose: flags.Verbose,
-		Color:   flags.Color,
-	})
-
+func run(ctx context.Context) error {
 	if err := flags.Validate(); err != nil {
 		return err
 	}
@@ -99,12 +99,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		if !flags.Silent {
-			if flags.Verbose {
-				log.Outf(logger.Default, "%s\n", task.DefaultTaskfile)
-			}
-			log.Outf(logger.Green, "Taskfile created: %s\n", filepathext.TryAbsToRel(finalPath))
-		}
+
+		rlog.Debugf(ctx, "%s\n", task.DefaultTaskfile)
+		rlog.Infof(ctx, "Taskfile created: %s\n", filepathext.TryAbsToRel(finalPath))
+
 		return nil
 	}
 
@@ -112,7 +110,7 @@ func run() error {
 		flags.WithFlags(),
 		task.WithVersionCheck(true),
 	)
-	if err := e.Setup(); err != nil {
+	if err := e.Setup(ctx); err != nil {
 		return err
 	}
 
@@ -174,8 +172,6 @@ func run() error {
 	if !flags.Watch {
 		e.InterceptInterruptSignals()
 	}
-
-	ctx := context.Background()
 
 	if flags.Status {
 		return e.Status(ctx, calls...)

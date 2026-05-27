@@ -1,6 +1,6 @@
 //go:build windows
 
-package logger
+package rlog
 
 import (
 	"os"

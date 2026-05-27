@@ -1,7 +1,6 @@
 package rivet
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,9 +13,9 @@ import (
 
 	"github.com/go-rivet/rivet/internal/editors"
 	"github.com/go-rivet/rivet/internal/fingerprint"
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/sort"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
 // ListOptions collects list-related options
@@ -81,29 +80,31 @@ func (e *Executor) ListTasks(o ListOptions) (bool, error) {
 	}
 	if len(tasks) == 0 {
 		if o.ListOnlyTasksWithDescriptions {
-			e.Logger.OutfDirect(logger.Yellow, "task: No tasks with description available. Try --list-all to list all tasks\n")
+			rlog.Outf(e.ctx, rlog.Yellow, "task: No tasks with description available. Try --list-all to list all tasks\n")
 		} else if o.ListAllTasks {
-			e.Logger.OutfDirect(logger.Yellow, "task: No tasks available\n")
+			rlog.Outf(e.ctx, rlog.Yellow, "task: No tasks available\n")
 		}
 		return false, nil
 	}
-	e.Logger.OutfDirect(logger.Default, "task: Available tasks for this project:\n")
+	rlog.Outf(e.ctx, rlog.Default, "task: Available tasks for this project:\n")
 
 	// Format in tab-separated columns with a tab stop of 8.
-	w := tabwriter.NewWriter(e.Stdout, 0, 8, 6, ' ', 0)
+	var buffer strings.Builder
+	w := tabwriter.NewWriter(&buffer, 0, 8, 6, ' ', 0)
 	for _, task := range tasks {
-		e.Logger.FOutf(w, logger.Yellow, "* ")
-		e.Logger.FOutf(w, logger.Green, task.Task)
+		rlog.Yellow()(w, "* ")
+		rlog.Green()(w, task.Task)
 		desc := strings.ReplaceAll(task.Desc, "\n", " ")
-		e.Logger.FOutf(w, logger.Default, ": \t%s", desc)
+		rlog.Default()(w, ": \t%s", desc)
 		if len(task.Aliases) > 0 {
-			e.Logger.FOutf(w, logger.Cyan, "\t(aliases: %s)", strings.Join(task.Aliases, ", "))
+			rlog.Cyan()(w, "\t(aliases: %s)", strings.Join(task.Aliases, ", "))
 		}
 		_, _ = fmt.Fprint(w, "\n")
 	}
 	if err := w.Flush(); err != nil {
 		return false, err
 	}
+	rlog.Outf(e.ctx, rlog.Default, "%s", buffer.String())
 	return true, nil
 }
 
@@ -157,11 +158,10 @@ func (e *Executor) ToEditorOutput(tasks []*ast.Task, noStatus bool, nested bool)
 			if tasks[i].Method != "" {
 				method = tasks[i].Method
 			}
-			upToDate, err := fingerprint.IsTaskUpToDate(context.Background(), tasks[i],
+			upToDate, err := fingerprint.IsTaskUpToDate(e.ctx, tasks[i],
 				fingerprint.WithMethod(method),
 				fingerprint.WithTempDir(e.TempDir.Fingerprint),
 				fingerprint.WithDry(e.Dry),
-				fingerprint.WithLogger(e.Logger),
 			)
 			if err != nil {
 				return err

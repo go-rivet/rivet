@@ -17,10 +17,10 @@ import (
 	"github.com/go-rivet/rivet/internal/concurrent"
 	"github.com/go-rivet/rivet/internal/fingerprint"
 	"github.com/go-rivet/rivet/internal/fsnotifyext"
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/slicesext"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
 const defaultWaitTime = 100 * time.Millisecond
@@ -36,9 +36,9 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 		tasks[i] = c.Task
 	}
 
-	e.Logger.Errorf("task: Started watching for tasks: %s\n", strings.Join(tasks, ", "))
+	rlog.Errorf(e.ctx, "task: Started watching for tasks: %s\n", strings.Join(tasks, ", "))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(e.ctx)
 	defer cancel()
 	for _, c := range calls {
 		wg.Add(1)
@@ -47,9 +47,9 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 
 			err := e.RunTask(ctx, c)
 			if err == nil {
-				e.Logger.Errorf("task: task \"%s\" finished running\n", c.Task)
+				rlog.Errorf(ctx, "task: task \"%s\" finished running\n", c.Task)
 			} else if !isContextError(err) {
-				e.Logger.Errorf("%v\n", err)
+				rlog.Errorf(ctx, "%v\n", err)
 			}
 		}(c)
 	}
@@ -95,7 +95,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 				_ = path
 				watchFiles, err = e.collectSources(calls)
 				if err != nil {
-					e.Logger.Errorf("%v\n", err)
+					rlog.Errorf(ctx, "%v\n", err)
 					continue
 				}
 
@@ -104,11 +104,11 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 					cancel()
 					return
 				}
-				e.Logger.VerboseErrf(logger.Magenta, "task: received watch event: %v\n", event)
+				rlog.Debugf(ctx, "task: received watch event: %v\n", event)
 
 				// Check if this watch event should be ignored.
 				if ShouldIgnore(event.Name) {
-					e.Logger.VerboseErrf(logger.Magenta, "task: event skipped for being an ignored dir: %s\n", event.Name)
+					rlog.Debugf(ctx, "task: event skipped for being an ignored dir: %s\n", event.Name)
 					continue
 				}
 				if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Write) {
@@ -117,7 +117,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 						if rel, err := filepath.Rel(e.Dir, event.Name); err == nil {
 							relPath = rel
 						}
-						e.Logger.VerboseErrf(logger.Magenta, "task: skipped for file not in sources: %s\n", relPath)
+						rlog.Debugf(ctx, "task: skipped for file not in sources: %s\n", relPath)
 						continue
 					}
 				}
@@ -130,14 +130,14 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 					}
 					watchFiles, err = e.collectSources(calls)
 					if err != nil {
-						e.Logger.Errorf("%v\n", err)
+						rlog.Errorf(ctx, "%v\n", err)
 						continue
 					}
 
 					if createDir {
 						// If the CREATE relates to a folder, update the registered watch dirs (immediately).
 						if err := e.registerWatchedDirs(w, calls...); err != nil {
-							e.Logger.Errorf("%v\n", err)
+							rlog.Errorf(ctx, "%v\n", err)
 						}
 					} else {
 						if !slices.Contains(watchFiles, event.Name) {
@@ -145,7 +145,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 							if rel, err := filepath.Rel(e.Dir, event.Name); err == nil {
 								relPath = rel
 							}
-							e.Logger.VerboseErrf(logger.Magenta, "task: skipped for file not in sources: %s\n", relPath)
+							rlog.Debugf(ctx, "task: skipped for file not in sources: %s\n", relPath)
 							continue
 						}
 					}
@@ -156,7 +156,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 				wg.Wait() // This is the single wait point, for the entry loop and the following loop.
 
 				e.Compiler.ResetCache()
-				ctx, cancel = context.WithCancel(context.Background())
+				ctx, cancel = context.WithCancel(e.ctx)
 				defer cancel()
 				for _, c := range calls {
 					wg.Add(1)
@@ -165,9 +165,9 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 
 						err = e.RunTask(ctx, c)
 						if err == nil {
-							e.Logger.Errorf("task: task \"%s\" finished running\n", c.Task)
+							rlog.Errorf(ctx, "task: task \"%s\" finished running\n", c.Task)
 						} else if !isContextError(err) {
-							e.Logger.Errorf("%v\n", err)
+							rlog.Errorf(ctx, "%v\n", err)
 						}
 					}(c)
 				}
@@ -177,7 +177,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 					cancel()
 					return
 				default:
-					e.Logger.Errorf("%v\n", err)
+					rlog.Errorf(ctx, "%v\n", err)
 				}
 			}
 		}
@@ -191,7 +191,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 		// from time to time.
 		for {
 			if err := e.registerWatchedDirs(w, calls...); err != nil {
-				e.Logger.Errorf("%v\n", err)
+				rlog.Errorf(ctx, "%v\n", err)
 			}
 			time.Sleep(5 * time.Second)
 		}
@@ -258,7 +258,7 @@ func (e *Executor) registerWatchedDirs(w *fsnotify.Watcher, calls ...*Call) erro
 		}
 		e.watchedDirs.Store(d, true)
 		relPath, _ := filepath.Rel(e.Dir, d)
-		e.Logger.VerboseOutf(logger.Green, "task: watching new dir: %v\n", relPath)
+		rlog.Debugf(e.ctx, "task: watching new dir: %v\n", relPath)
 
 		// Signal that the watcher should refresh its watch file list.
 		refreshChan <- d

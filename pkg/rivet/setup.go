@@ -14,16 +14,18 @@ import (
 	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/filepathext"
-	"github.com/go-rivet/rivet/internal/logger"
 	"github.com/go-rivet/rivet/internal/output"
+	"github.com/go-rivet/rivet/internal/prompt"
 	"github.com/go-rivet/rivet/internal/stringutil"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
-func (e *Executor) Setup() error {
-	e.setupLogger()
+func (e *Executor) Setup(ctx context.Context) error {
+	e.ctx = ctx
+
 	node, err := e.getRootNode()
 	if err != nil {
 		return err
@@ -76,13 +78,13 @@ func (e *Executor) getRootNode() (taskfile.Node, error) {
 }
 
 func (e *Executor) readTaskfile(node taskfile.Node) error {
-	ctx, cf := context.WithTimeout(context.Background(), e.Timeout)
+	ctx, cf := context.WithTimeout(e.ctx, e.Timeout)
 	defer cf()
 	debugFunc := func(s string) {
-		e.Logger.VerboseOutf(logger.Magenta, s)
+		rlog.Debug(ctx, s)
 	}
 	promptFunc := func(s string) error {
-		return e.Logger.Prompt(logger.Yellow, s, "n", "y", "yes")
+		return prompt.Prompt(ctx, s, "n", false, true, "y", "yes") // FIXME: use flag
 	}
 	reader := taskfile.NewReader(
 		taskfile.WithInsecure(e.Insecure),
@@ -188,26 +190,13 @@ func (e *Executor) setupStdFiles() {
 	}
 }
 
-func (e *Executor) setupLogger() {
-	e.Logger = logger.NewLogger(logger.LoggerOptions{
-		Stdin:      e.Stdin,
-		Stdout:     e.Stdout,
-		Stderr:     e.Stderr,
-		Verbose:    e.Verbose,
-		Color:      e.Color,
-		AssumeYes:  e.AssumeYes,
-		AssumeTerm: e.AssumeTerm,
-		LogFormat:  e.LogFormat,
-	})
-}
-
 func (e *Executor) setupOutput() error {
 	if !e.OutputStyle.IsSet() {
 		e.OutputStyle = e.Taskfile.Output
 	}
 
 	var err error
-	e.Output, err = output.BuildFor(&e.OutputStyle, e.Logger)
+	e.Output, err = output.BuildFor(&e.OutputStyle)
 	return err
 }
 
@@ -226,7 +215,6 @@ func (e *Executor) setupCompiler() error {
 		RootDir:        e.RootDir,
 		TaskfileEnv:    e.Taskfile.Env,
 		TaskfileVars:   e.Taskfile.Vars,
-		Logger:         e.Logger,
 	}
 	return nil
 }
@@ -240,7 +228,7 @@ func (e *Executor) readDotEnvFiles() error {
 		return nil
 	}
 
-	vars, err := e.Compiler.GetTaskfileVariables()
+	vars, err := e.Compiler.GetTaskfileVariables(e.ctx)
 	if err != nil {
 		return err
 	}
