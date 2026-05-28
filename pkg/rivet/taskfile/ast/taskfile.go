@@ -30,7 +30,6 @@ type Taskfile struct {
 	Vars     *Vars
 	Env      *Vars
 	Tasks    *Tasks
-	Silent   bool
 	Dotenv   []string
 	Run      string
 	Interval time.Duration
@@ -59,14 +58,6 @@ func (t1 *Taskfile) Merge(t2 *Taskfile, include *Include) error {
 	if t1.Tasks == nil {
 		t1.Tasks = NewTasks()
 	}
-	if t2.Silent {
-		for _, t := range t2.Tasks.All(nil) {
-			if t.Silent == nil {
-				v := true
-				t.Silent = &v
-			}
-		}
-	}
 	t1.Vars.Merge(t2.Vars, include)
 	t1.Env.Merge(t2.Env, include)
 	return t1.Tasks.Merge(t2.Tasks, include, t1.Vars)
@@ -85,7 +76,6 @@ func (tf *Taskfile) UnmarshalYAML(node *yaml.Node) error {
 			Vars     *Vars
 			Env      *Vars
 			Tasks    *Tasks
-			Silent   bool
 			Dotenv   []string
 			Run      string
 			Interval time.Duration
@@ -102,7 +92,6 @@ func (tf *Taskfile) UnmarshalYAML(node *yaml.Node) error {
 		tf.Vars = taskfile.Vars
 		tf.Env = taskfile.Env
 		tf.Tasks = taskfile.Tasks
-		tf.Silent = taskfile.Silent
 		tf.Dotenv = taskfile.Dotenv
 		tf.Run = taskfile.Run
 		tf.Interval = taskfile.Interval

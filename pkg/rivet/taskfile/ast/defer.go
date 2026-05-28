@@ -7,10 +7,9 @@ import (
 )
 
 type Defer struct {
-	Cmd    string
-	Task   string
-	Vars   *Vars
-	Silent bool
+	Cmd  string
+	Task string
+	Vars *Vars
 }
 
 func (d *Defer) UnmarshalYAML(node *yaml.Node) error {
@@ -26,10 +25,9 @@ func (d *Defer) UnmarshalYAML(node *yaml.Node) error {
 
 	case yaml.MappingNode:
 		var deferStruct struct {
-			Defer  string
-			Task   string
-			Vars   *Vars
-			Silent bool
+			Defer string
+			Task  string
+			Vars  *Vars
 		}
 		if err := node.Decode(&deferStruct); err != nil {
 			return errors.NewTaskfileDecodeError(err, node)
@@ -37,7 +35,6 @@ func (d *Defer) UnmarshalYAML(node *yaml.Node) error {
 		d.Cmd = deferStruct.Defer
 		d.Task = deferStruct.Task
 		d.Vars = deferStruct.Vars
-		d.Silent = deferStruct.Silent
 		return nil
 	}
 

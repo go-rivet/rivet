@@ -6,6 +6,5 @@ import "github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 type Call struct {
 	Task     string
 	Vars     *ast.Vars
-	Silent   bool
 	Indirect bool // True if the task was called by another task
 }

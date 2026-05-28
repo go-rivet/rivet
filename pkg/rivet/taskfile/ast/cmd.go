@@ -13,7 +13,6 @@ type Cmd struct {
 	Task        string
 	For         *For
 	If          string
-	Silent      bool
 	Set         []string
 	Shopt       []string
 	Vars        *Vars
@@ -31,7 +30,6 @@ func (c *Cmd) DeepCopy() *Cmd {
 		Task:        c.Task,
 		For:         c.For.DeepCopy(),
 		If:          c.If,
-		Silent:      c.Silent,
 		Set:         deepcopy.Slice(c.Set),
 		Shopt:       deepcopy.Slice(c.Shopt),
 		Vars:        c.Vars.DeepCopy(),
@@ -58,7 +56,6 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			Task        string
 			For         *For
 			If          string
-			Silent      bool
 			Set         []string
 			Shopt       []string
 			Vars        *Vars
@@ -75,7 +72,6 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			if cmdStruct.Defer.Cmd != "" {
 				c.Defer = true
 				c.Cmd = cmdStruct.Defer.Cmd
-				c.Silent = cmdStruct.Silent
 				return nil
 			}
 
@@ -84,7 +80,6 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 				c.Defer = true
 				c.Task = cmdStruct.Defer.Task
 				c.Vars = cmdStruct.Defer.Vars
-				c.Silent = cmdStruct.Defer.Silent
 				return nil
 			}
 			return nil
@@ -96,7 +91,6 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			c.Vars = cmdStruct.Vars
 			c.For = cmdStruct.For
 			c.If = cmdStruct.If
-			c.Silent = cmdStruct.Silent
 			c.IgnoreError = cmdStruct.IgnoreError
 			return nil
 		}
@@ -106,7 +100,6 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			c.Cmd = cmdStruct.Cmd
 			c.For = cmdStruct.For
 			c.If = cmdStruct.If
-			c.Silent = cmdStruct.Silent
 			c.Set = cmdStruct.Set
 			c.Shopt = cmdStruct.Shopt
 			c.IgnoreError = cmdStruct.IgnoreError

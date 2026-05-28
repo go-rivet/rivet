@@ -3,9 +3,11 @@ package flags
 import (
 	"cmp"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -15,6 +17,7 @@ import (
 	task "github.com/go-rivet/rivet/pkg/rivet"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
 const usage = `Usage: task [flags...] [task...]
@@ -39,6 +42,54 @@ tasks:
 Options:
 `
 
+type VerboseLevel int
+
+const (
+	LevelNone  VerboseLevel = 0
+	LevelInfo  VerboseLevel = 1 // Maps to -v     or --verbose=info
+	LevelDebug VerboseLevel = 2 // Maps to -vv    or --verbose=debug
+	LevelTrace VerboseLevel = 3 // Maps to -vvv   or --verbose=trace
+)
+
+func (vl *VerboseLevel) String() string {
+	switch *vl {
+	case LevelInfo:
+		return "info"
+	case LevelDebug:
+		return "debug"
+	case LevelTrace:
+		return "trace"
+	default:
+		return "none"
+	}
+}
+
+func (vl *VerboseLevel) Type() string {
+	return "string/count"
+}
+
+func (vl *VerboseLevel) Set(s string) error {
+	normalized := strings.ToLower(strings.TrimSpace(s))
+
+	switch normalized {
+	case "info":
+		*vl = LevelInfo
+		return nil
+	case "debug":
+		*vl = LevelDebug
+		return nil
+	case "trace":
+		*vl = LevelTrace
+		return nil
+	case "none", "0":
+		*vl = LevelNone
+		return nil
+	default:
+		*vl = LevelNone
+		return nil
+	}
+}
+
 var (
 	Version             bool
 	Help                bool
@@ -54,8 +105,8 @@ var (
 	Force               bool
 	ForceAll            bool
 	Watch               bool
-	Verbose             bool
-	Silent              bool
+	Verbose             VerboseLevel
+	VLevel              int
 	DisableFuzzy        bool
 	AssumeYes           bool
 	Dry                 bool
@@ -114,8 +165,13 @@ func init() {
 	pflag.BoolVar(&Nested, "nested", false, "Nest namespaces when listing tasks as JSON")
 	pflag.BoolVar(&Insecure, "insecure", getConfig("REMOTE_INSECURE", false), "Forces Task to download Taskfiles over insecure connections.")
 	pflag.BoolVarP(&Watch, "watch", "w", false, "Enables watch of the given task.")
-	pflag.BoolVarP(&Verbose, "verbose", "v", getConfig("VERBOSE", false), "Enables verbose mode.")
-	pflag.BoolVarP(&Silent, "silent", "s", getConfig("SILENT", false), "Disables echoing.")
+
+	_ = Verbose.Set("none")
+	pflag.Var(&Verbose, "verbose", "Log verbosity level [info|debug|trace] or cumulative shorthand [-v|-vv|-vvv]")
+	pflag.CountVarP(&VLevel, "v-count", "v", "Increase verbosity level cumulatively (-v, -vv, -vvv)")
+	_ = pflag.CommandLine.MarkHidden("v-count")
+	pflag.StringVar(&LogFormat, "log", "", `Log format ("json" or "text").`)
+
 	pflag.BoolVar(&DisableFuzzy, "disable-fuzzy", getConfig("DISABLE_FUZZY", false), "Disables fuzzy matching for task names.")
 	pflag.BoolVarP(&AssumeYes, "yes", "y", getConfig("ASSUME_YES", false), "Assume \"yes\" as answer to all prompts.")
 	pflag.BoolVar(&Interactive, "interactive", getConfig("INTERACTIVE", false), "Prompt for missing required variables.")
@@ -134,7 +190,6 @@ func init() {
 	pflag.DurationVarP(&Interval, "interval", "I", 0, "Interval to watch for changes.")
 	pflag.BoolVarP(&Failfast, "failfast", "F", getConfig("FAILFAST", false), "When running tasks in parallel, stop all tasks if one fails.")
 	pflag.BoolVarP(&Global, "global", "g", false, "Runs global Taskfile, from $HOME/{T,t}askfile.{yml,yaml}.")
-	pflag.StringVar(&LogFormat, "log", "", `Log format ("json" or "text").`)
 
 	pflag.BoolVarP(&ForceAll, "force", "f", false, "Forces execution even when the task is up-to-date.")
 
@@ -153,6 +208,13 @@ func init() {
 	}
 	pflag.Parse()
 
+	if VLevel > 0 {
+		if VLevel > int(LevelTrace) {
+			VLevel = int(LevelTrace)
+		}
+		Verbose = VerboseLevel(VLevel)
+	}
+
 	// Auto-detect color based on environment when not explicitly configured
 	// Priority: CLI flag > TASK_COLOR env > taskrc config > NO_COLOR > FORCE_COLOR/CI > default
 	colorExplicitlySet := pflag.Lookup("color").Changed || env.GetTaskEnv("COLOR") != ""
@@ -162,6 +224,21 @@ func init() {
 		} else if os.Getenv("FORCE_COLOR") != "" || isCI() {
 			Color = true
 		}
+	}
+}
+
+func LogLevel(level VerboseLevel) slog.Level {
+	switch level {
+	case LevelNone:
+		return slog.LevelWarn
+	case LevelInfo:
+		return slog.LevelInfo
+	case LevelDebug:
+		return slog.LevelDebug
+	case LevelTrace:
+		return rlog.LevelTrace
+	default:
+		return slog.LevelWarn
 	}
 }
 
@@ -270,8 +347,6 @@ func (o *flagsOption) ApplyToExecutor(e *task.Executor) {
 		task.WithCert(Cert),
 		task.WithCertKey(CertKey),
 		task.WithWatch(Watch),
-		task.WithVerbose(Verbose),
-		task.WithSilent(Silent),
 		task.WithDisableFuzzy(DisableFuzzy),
 		task.WithAssumeYes(AssumeYes),
 		task.WithInteractive(Interactive),

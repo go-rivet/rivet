@@ -53,19 +53,21 @@ type (
 	}
 )
 
-func SetupTestLogger(t *testing.T, verbose, silent bool) (context.Context, *SyncBuffer) {
+func SetupTestLogger(t *testing.T, verbose, silent bool) (context.Context, *SyncBuffer, *slog.LevelVar) {
 	t.Helper()
 
 	var buffer SyncBuffer
-	logOpts := &slog.HandlerOptions{Level: slog.LevelInfo}
+	levelVar := new(slog.LevelVar)
+	levelVar.Set(slog.LevelInfo)
+	logOpts := &slog.HandlerOptions{Level: levelVar}
 	if silent {
-		logOpts.Level = slog.LevelError
+		levelVar.Set(slog.LevelError)
 	} else if verbose {
-		logOpts.Level = slog.LevelDebug
+		levelVar.Set(slog.LevelDebug)
 	}
 	logHandler := rlog.NewCliHandler(&buffer, &buffer, false, logOpts)
 	ctx := rlog.WithContext(t.Context(), logHandler)
-	return ctx, &buffer
+	return ctx, &buffer, levelVar
 }
 
 // goldenFileName makes the file path for fixture files safe for all well-known
@@ -421,7 +423,7 @@ func (fct fileContentTest) Run(t *testing.T) {
 		task.WithStderr(io.Discard),
 	)
 
-	ctx, _ := SetupTestLogger(t, false, false)
+	ctx, _, _ := SetupTestLogger(t, false, false)
 
 	require.NoError(t, e.Setup(ctx), "e.Setup(ctx)")
 	require.NoError(t, e.Run(ctx, &task.Call{Task: fct.Target}), "e.Run(target)")
@@ -461,8 +463,9 @@ func TestGenerates(t *testing.T) {
 		}
 	}
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -523,8 +526,9 @@ func TestStatusChecksum(t *testing.T) { // nolint:paralleltest // cannot run in 
 				Remote:      filepathext.SmartJoin(dir, ".task"),
 				Fingerprint: filepathext.SmartJoin(dir, ".task"),
 			}
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(dir),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),
@@ -571,8 +575,9 @@ func TestStatusTimestamp(t *testing.T) { // nolint:paralleltest // cannot run in
 	_ = os.Remove(generatedFile)
 	_ = os.RemoveAll(filepathext.SmartJoin(dir, ".task"))
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -620,8 +625,9 @@ func TestStatusChecksumMissingGenerated(t *testing.T) { // nolint:paralleltest /
 	_ = os.Remove(generatedFile)
 	_ = os.RemoveAll(filepathext.SmartJoin(dir, ".task"))
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -661,8 +667,9 @@ func TestStatusVariables(t *testing.T) {
 	_ = os.RemoveAll(filepathext.SmartJoin(dir, ".task"))
 	_ = os.Remove(filepathext.SmartJoin(dir, "generated.txt"))
 
-	ctx, buffer := SetupTestLogger(t, true, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, true, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithTempDir(task.TempDir{
 			Remote:      filepathext.SmartJoin(dir, ".task"),
@@ -697,8 +704,9 @@ func TestCmdsVariables(t *testing.T) {
 
 	_ = os.RemoveAll(filepathext.SmartJoin(dir, ".task"))
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithTempDir(task.TempDir{
 			Remote:      filepathext.SmartJoin(dir, ".task"),
@@ -729,9 +737,10 @@ func TestCyclicDep(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/cyclic"
-	ctx, _ := SetupTestLogger(t, false, false)
+	ctx, _, levelVar := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(io.Discard),
 		task.WithStderr(io.Discard),
@@ -759,8 +768,9 @@ func TestTaskVersion(t *testing.T) {
 		t.Run(test.Dir, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, _ := SetupTestLogger(t, false, false)
+			ctx, _, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(test.Dir),
 				task.WithStdout(io.Discard),
 				task.WithStderr(io.Discard),
@@ -783,8 +793,9 @@ func TestTaskIgnoreErrors(t *testing.T) {
 
 	const dir = "testdata/ignore_errors"
 
-	ctx, _ := SetupTestLogger(t, false, false)
+	ctx, _, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(io.Discard),
 		task.WithStderr(io.Discard),
@@ -806,9 +817,10 @@ func TestExpand(t *testing.T) {
 	if err != nil {
 		t.Errorf("Couldn't get $HOME: %v", err)
 	}
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -826,9 +838,10 @@ func TestDry(t *testing.T) {
 	file := filepathext.SmartJoin(dir, "file.txt")
 	_ = os.Remove(file)
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -852,9 +865,10 @@ func TestDryChecksum(t *testing.T) {
 
 	checksumFile := filepathext.SmartJoin(dir, ".task/checksum/default")
 	_ = os.Remove(checksumFile)
-	ctx, _ := SetupTestLogger(t, false, false)
+	ctx, _, levelVar := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithTempDir(task.TempDir{
 			Remote:      filepathext.SmartJoin(dir, ".task"),
@@ -953,7 +967,7 @@ func TestIncludesRemote(t *testing.T) {
 			t.Setenv("FIRST_REMOTE_URL", tc.firstRemote)
 			t.Setenv("SECOND_REMOTE_URL", tc.secondRemote)
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 
 			// Extract host from server URL for trust testing
 			parsedURL, err := url.Parse(srv.URL)
@@ -967,6 +981,7 @@ func TestIncludesRemote(t *testing.T) {
 				{
 					name: "online, always download",
 					executor: task.NewExecutor(
+						task.WithLevelVar(levelVar),
 						task.WithDir(dir),
 						task.WithStdout(buffer),
 						task.WithStderr(buffer),
@@ -982,6 +997,7 @@ func TestIncludesRemote(t *testing.T) {
 				{
 					name: "offline, use cache",
 					executor: task.NewExecutor(
+						task.WithLevelVar(levelVar),
 						task.WithDir(dir),
 						task.WithStdout(buffer),
 						task.WithStderr(buffer),
@@ -998,6 +1014,7 @@ func TestIncludesRemote(t *testing.T) {
 				{
 					name: "with trusted hosts, no prompts",
 					executor: task.NewExecutor(
+						task.WithLevelVar(levelVar),
 						task.WithDir(dir),
 						task.WithStdout(buffer),
 						task.WithStderr(buffer),
@@ -1049,8 +1066,9 @@ func TestIncludeCycle(t *testing.T) {
 
 	const dir = "testdata/includes_cycle"
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1067,8 +1085,9 @@ func TestIncludesIncorrect(t *testing.T) {
 
 	const dir = "testdata/includes_incorrect"
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1136,8 +1155,9 @@ func TestIncludesHttp(t *testing.T) {
 					t.Setenv("INCLUDE_ROOT", remote.root)
 					entrypoint := filepath.Join(dir, taskfile)
 
-					ctx, buffer := SetupTestLogger(t, true, false)
+					ctx, buffer, levelVar := SetupTestLogger(t, true, false)
 					e := task.NewExecutor(
+						task.WithLevelVar(levelVar),
 						task.WithEntrypoint(entrypoint),
 						task.WithDir(dir),
 						task.WithStdout(buffer),
@@ -1239,9 +1259,10 @@ func TestIncludesOptionalImplicitFalse(t *testing.T) {
 
 	message := "task: No Taskfile found at \"%s/%s/TaskfileOptional.yml\""
 	expected := fmt.Sprintf(message, filepath.ToSlash(wd), dir)
-	ctx, _ := SetupTestLogger(t, false, false)
+	ctx, _, levelVar := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(io.Discard),
 		task.WithStderr(io.Discard),
@@ -1260,9 +1281,10 @@ func TestIncludesOptionalExplicitFalse(t *testing.T) {
 
 	message := "task: No Taskfile found at \"%s/%s/TaskfileOptional.yml\""
 	expected := fmt.Sprintf(message, filepath.ToSlash(wd), dir)
-	ctx, _ := SetupTestLogger(t, false, false)
+	ctx, _, levelVar := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(io.Discard),
 		task.WithStderr(io.Discard),
@@ -1298,8 +1320,9 @@ func TestIncludesRelativePath(t *testing.T) {
 
 	const dir = "testdata/includes_rel_path"
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1334,8 +1357,9 @@ func TestIncludesInternal(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(dir),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),
@@ -1377,8 +1401,9 @@ func TestIncludesFlatten(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(dir),
 				task.WithEntrypoint(dir+"/"+test.taskfile),
 				task.WithStdout(buffer),
@@ -1413,8 +1438,9 @@ func TestIncludesInterpolation(t *testing.T) { // nolint:paralleltest // cannot 
 
 	for _, test := range tests { // nolint:paralleltest // cannot run in parallel
 		t.Run(test.name, func(t *testing.T) {
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(filepath.Join(dir, test.name)),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),
@@ -1436,8 +1462,9 @@ func TestIncludesInterpolation(t *testing.T) { // nolint:paralleltest // cannot 
 func TestIncludesWithExclude(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/includes_with_excludes"),
 		task.WithSilent(true),
 		task.WithStdout(buffer),
@@ -1479,8 +1506,9 @@ func TestIncludedTaskfileVarMerging(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(dir),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),
@@ -1514,8 +1542,9 @@ func TestInternalTask(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(dir),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),
@@ -1599,8 +1628,9 @@ func TestSummary(t *testing.T) {
 
 	const dir = "testdata/summary"
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1626,8 +1656,9 @@ func TestWhenNoDirAttributeItRunsInSameDirAsTaskfile(t *testing.T) {
 
 	const expected = "dir"
 	const dir = "testdata/" + expected
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1648,8 +1679,9 @@ func TestWhenDirAttributeAndDirExistsItRunsInThatDir(t *testing.T) {
 
 	const expected = "exists"
 	const dir = "testdata/dir/explicit_exists"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1671,8 +1703,9 @@ func TestWhenDirAttributeItCreatesMissingAndRunsInThatDir(t *testing.T) {
 	const dir = "testdata/dir/explicit_doesnt_exist/"
 	const toBeCreated = dir + expected
 	const target = "whereami"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1702,8 +1735,9 @@ func TestDynamicVariablesRunOnTheNewCreatedDir(t *testing.T) {
 	const dir = "testdata/dir/dynamic_var_on_created_dir/"
 	const toBeCreated = dir + expected
 	const target = "default"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1755,8 +1789,9 @@ func TestDynamicVariablesRunOnParentDir(t *testing.T) {
 	const dir = "testdata/dir/dynamic_var_on_parent_dir/"
 	const toBeCreated = dir + "somefolder"
 	const target = "default"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1782,9 +1817,10 @@ func TestDynamicVariablesRunOnParentDir(t *testing.T) {
 func TestDisplaysErrorOnVersion1Schema(t *testing.T) {
 	t.Parallel()
 
-	ctx, _ := SetupTestLogger(t, false, false)
+	ctx, _, levelVar := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/version/v1"),
 		task.WithStdout(io.Discard),
 		task.WithStderr(io.Discard),
@@ -1798,8 +1834,9 @@ func TestDisplaysErrorOnVersion1Schema(t *testing.T) {
 func TestDisplaysErrorOnVersion2Schema(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/version/v2"),
 		task.WithStdout(io.Discard),
 		task.WithStderr(buffer),
@@ -1815,8 +1852,9 @@ func TestShortTaskNotation(t *testing.T) {
 
 	const dir = "testdata/short_task_notation"
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -1847,8 +1885,9 @@ func TestDotenvShouldIncludeAllEnvFiles(t *testing.T) {
 func TestDotenvShouldErrorWhenIncludingDependantDotenvs(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/dotenv/error_included_envs"),
 		task.WithSummary(true),
 		task.WithStdout(buffer),
@@ -1927,9 +1966,10 @@ func TestDotenvHasEnvVarInPath(t *testing.T) { // nolint:paralleltest // cannot 
 
 func TestTaskDotenvParseErrorMessage(t *testing.T) {
 	t.Parallel()
-	ctx, _ := SetupTestLogger(t, false, false)
+	ctx, _, levelVar := SetupTestLogger(t, false, false)
 
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/dotenv/parse_error"),
 	)
 
@@ -2050,8 +2090,9 @@ func TestExitImmediately(t *testing.T) {
 
 	const dir = "testdata/exit_immediately"
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2100,8 +2141,9 @@ func TestRunOnceSharedDeps(t *testing.T) {
 
 	const dir = "testdata/run_once_shared_deps"
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2122,8 +2164,9 @@ func TestRunWhenChanged(t *testing.T) {
 
 	const dir = "testdata/run_when_changed"
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2144,8 +2187,9 @@ func TestDeferredCmds(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/deferred"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2156,12 +2200,14 @@ func TestDeferredCmds(t *testing.T) {
 task: [task-2] echo 'cmd ran'
 cmd ran
 task: [task-2] exit 1
-task: [task-2] echo 'failing' && exit 2
-failing
-echo ran
-task-1 ran successfully
-task: [task-1] echo 'task-1 ran successfully'
-task-1 ran successfully
+task: [task-2] echo 'd4 failing' && exit 2
+d4 failing
+task: [task-2] echo 'd3 echo ran'
+d3 echo ran
+task: [task-1] echo 'task-1 ran d2 successfully'
+task-1 ran d2 successfully
+task: [task-1] echo 'task-1 ran d1 successfully'
+task-1 ran d1 successfully
 `)
 	require.Error(t, e.Run(ctx, &task.Call{Task: "task-2"}))
 	assert.Contains(t, buffer.buf.String(), expectedOutputOrder)
@@ -2174,8 +2220,9 @@ func TestExitCodeZero(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/exit_code"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2190,8 +2237,9 @@ func TestExitCodeOne(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/exit_code"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2219,8 +2267,9 @@ func TestIgnoreNilElements(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(test.dir),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),
@@ -2237,8 +2286,9 @@ func TestOutputGroup(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/output_group"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2264,8 +2314,9 @@ func TestOutputGroupErrorOnlySwallowsOutputOnSuccess(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/output_group_error_only"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2281,8 +2332,9 @@ func TestOutputGroupErrorOnlyShowsOutputOnFailure(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/output_group_error_only"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2299,8 +2351,9 @@ func TestIncludedVars(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/include_with_vars"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2330,7 +2383,7 @@ func TestIncludeWithVarsInInclude(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/include_with_vars_inside_include"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, _ := SetupTestLogger(t, false, false)
 	e := task.Executor{
 		Dir:    dir,
 		Stdout: buffer,
@@ -2343,8 +2396,9 @@ func TestIncludedVarsMultiLevel(t *testing.T) {
 	t.Parallel()
 
 	const dir = "testdata/include_with_vars_multi_level"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2388,8 +2442,9 @@ func TestErrorCode(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(dir),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),
@@ -2408,8 +2463,9 @@ func TestErrorCode(t *testing.T) {
 
 func TestEvaluateSymlinksInPaths(t *testing.T) { // nolint:paralleltest // cannot run in parallel
 	const dir = "testdata/evaluate_symlinks_in_paths"
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir(dir),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2485,11 +2541,13 @@ func TestTaskfileWalk(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir(test.dir),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),
+				task.WithSilent(true),
 			)
 			require.NoError(t, e.Setup(ctx))
 			require.NoError(t, e.Run(ctx, &task.Call{Task: "default"}))
@@ -2501,8 +2559,9 @@ func TestTaskfileWalk(t *testing.T) {
 func TestUserWorkingDirectory(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/user_working_dir"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2523,8 +2582,9 @@ func TestUserWorkingDirectoryWithIncluded(t *testing.T) {
 
 	wd = filepath.ToSlash(filepathext.SmartJoin(wd, "testdata/user_working_dir_with_includes/somedir"))
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/user_working_dir_with_includes"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2541,8 +2601,9 @@ func TestUserWorkingDirectoryWithIncluded(t *testing.T) {
 func TestPlatforms(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/platforms"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2555,8 +2616,9 @@ func TestPlatforms(t *testing.T) {
 func TestPOSIXShellOptsGlobalLevel(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/shopts/global_level"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2571,8 +2633,9 @@ func TestPOSIXShellOptsGlobalLevel(t *testing.T) {
 func TestPOSIXShellOptsTaskLevel(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/shopts/task_level"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2587,8 +2650,9 @@ func TestPOSIXShellOptsTaskLevel(t *testing.T) {
 func TestPOSIXShellOptsCommandLevel(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/shopts/command_level"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2603,8 +2667,9 @@ func TestPOSIXShellOptsCommandLevel(t *testing.T) {
 func TestBashShellOptsGlobalLevel(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/shopts/global_level"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2619,8 +2684,9 @@ func TestBashShellOptsGlobalLevel(t *testing.T) {
 func TestBashShellOptsTaskLevel(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/shopts/task_level"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2635,8 +2701,9 @@ func TestBashShellOptsTaskLevel(t *testing.T) {
 func TestBashShellOptsCommandLevel(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, true)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/shopts/command_level"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2651,8 +2718,9 @@ func TestBashShellOptsCommandLevel(t *testing.T) {
 func TestSplitArgs(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/split_args"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2671,8 +2739,9 @@ func TestSplitArgs(t *testing.T) {
 func TestAbsPath(t *testing.T) {
 	t.Parallel()
 
-	ctx, buffer := SetupTestLogger(t, false, false)
+	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(
+		task.WithLevelVar(levelVar),
 		task.WithDir("testdata/abs_path"),
 		task.WithStdout(buffer),
 		task.WithStderr(buffer),
@@ -2704,104 +2773,6 @@ func TestSingleCmdDep(t *testing.T) {
 		t.Parallel()
 		tt.Run(t)
 	})
-}
-
-func TestSilence(t *testing.T) {
-	t.Parallel()
-
-	ctx, buffer := SetupTestLogger(t, false, false)
-	e := task.NewExecutor(
-		task.WithDir("testdata/silent"),
-		task.WithStdout(buffer),
-		task.WithStderr(buffer),
-		task.WithSilent(false),
-	)
-	require.NoError(t, e.Setup(ctx))
-
-	// First verify that the silent flag is in place.
-	fetchedTask, err := e.GetTask(&task.Call{Task: "task-test-silent-calls-chatty-silenced"})
-	require.NoError(t, err, "Unable to look up task task-test-silent-calls-chatty-silenced")
-	require.True(t, fetchedTask.Cmds[0].Silent, "The task task-test-silent-calls-chatty-silenced should have a silent call to chatty")
-
-	// Then test the two basic cases where the task is silent or not.
-	// A silenced task.
-	err = e.Run(ctx, &task.Call{Task: "silent"})
-	require.NoError(t, err)
-	require.Empty(t, buffer.buf.String(), "siWhile running lent: Expected not see output, because the task is silent")
-
-	buffer.buf.Reset()
-
-	// A chatty (not silent) task.
-	err = e.Run(ctx, &task.Call{Task: "chatty"})
-	require.NoError(t, err)
-	require.NotEmpty(t, buffer.buf.String(), "chWhile running atty: Expected to see output, because the task is not silent")
-
-	buffer.buf.Reset()
-
-	// Then test invoking the two task from other tasks.
-	// A silenced task that calls a chatty task.
-	err = e.Run(ctx, &task.Call{Task: "task-test-silent-calls-chatty-non-silenced"})
-	require.NoError(t, err)
-	require.NotEmpty(t, buffer.buf.String(), "While running task-test-silent-calls-chatty-non-silenced: Expected to see output. The task is silenced, but the called task is not. Silence does not propagate to called tasks.")
-
-	buffer.buf.Reset()
-
-	// A silent task that does a silent call to a chatty task.
-	err = e.Run(ctx, &task.Call{Task: "task-test-silent-calls-chatty-silenced"})
-	require.NoError(t, err)
-	require.Empty(t, buffer.buf.String(), "While running task-test-silent-calls-chatty-silenced: Expected not to see output. The task calls chatty task, but the call is silenced.")
-
-	buffer.buf.Reset()
-
-	// A chatty task that does a call to a chatty task.
-	err = e.Run(ctx, &task.Call{Task: "task-test-chatty-calls-chatty-non-silenced"})
-	require.NoError(t, err)
-	require.NotEmpty(t, buffer.buf.String(), "While running task-test-chatty-calls-chatty-non-silenced: Expected to see output. Both caller and callee are chatty and not silenced.")
-
-	buffer.buf.Reset()
-
-	// A chatty task that does a silenced call to a chatty task.
-	err = e.Run(ctx, &task.Call{Task: "task-test-chatty-calls-chatty-silenced"})
-	require.NoError(t, err)
-	require.NotEmpty(t, buffer.buf.String(), "While running task-test-chatty-calls-chatty-silenced: Expected to see output. Call to a chatty task is silenced, but the parent task is not.")
-
-	buffer.buf.Reset()
-
-	// A chatty task with no cmd's of its own that does a silenced call to a chatty task.
-	err = e.Run(ctx, &task.Call{Task: "task-test-no-cmds-calls-chatty-silenced"})
-	require.NoError(t, err)
-	require.Empty(t, buffer.buf.String(), "While running task-test-no-cmds-calls-chatty-silenced: Expected not to see output. While the task itself is not silenced, it does not have any cmds and only does an invocation of a silenced task.")
-
-	buffer.buf.Reset()
-
-	// A chatty task that does a silenced invocation of a task.
-	err = e.Run(ctx, &task.Call{Task: "task-test-chatty-calls-silenced-cmd"})
-	require.NoError(t, err)
-	require.Empty(t, buffer.buf.String(), "While running task-test-chatty-calls-silenced-cmd: Expected not to see output. While the task itself is not silenced, its call to the chatty task is silent.")
-
-	buffer.buf.Reset()
-
-	// Then test calls via dependencies.
-	// A silent task that depends on a chatty task.
-	err = e.Run(ctx, &task.Call{Task: "task-test-is-silent-depends-on-chatty-non-silenced"})
-	require.NoError(t, err)
-	require.NotEmpty(t, buffer.buf.String(), "While running task-test-is-silent-depends-on-chatty-non-silenced: Expected to see output. The task is silent and depends on a chatty task. Dependencies does not inherit silence.")
-
-	buffer.buf.Reset()
-
-	// A silent task that depends on a silenced chatty task.
-	err = e.Run(ctx, &task.Call{Task: "task-test-is-silent-depends-on-chatty-silenced"})
-	require.NoError(t, err)
-	require.Empty(t, buffer.buf.String(), "While running task-test-is-silent-depends-on-chatty-silenced: Expected not to see output. The task is silent and has a silenced dependency on a chatty task.")
-
-	buffer.buf.Reset()
-
-	// A chatty task that, depends on a silenced chatty task.
-	err = e.Run(ctx, &task.Call{Task: "task-test-is-chatty-depends-on-chatty-silenced"})
-	require.NoError(t, err)
-	require.Empty(t, buffer.buf.String(), "While running task-test-is-chatty-depends-on-chatty-silenced: Expected not to see output. The task is chatty but does not have commands and has a silenced dependency on a chatty task.")
-
-	buffer.buf.Reset()
 }
 
 func TestForce(t *testing.T) {
@@ -2840,8 +2811,9 @@ func TestForce(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir("testdata/force"),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),
@@ -2904,8 +2876,9 @@ func TestWildcard(t *testing.T) {
 		t.Run(test.call, func(t *testing.T) {
 			t.Parallel()
 
-			ctx, buffer := SetupTestLogger(t, false, false)
+			ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 			e := task.NewExecutor(
+				task.WithLevelVar(levelVar),
 				task.WithDir("testdata/wildcards"),
 				task.WithStdout(buffer),
 				task.WithStderr(buffer),

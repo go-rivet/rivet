@@ -134,10 +134,22 @@ func (tt *ExecutorTest) run(t *testing.T) {
 		t.Helper()
 		var buffer SyncBuffer
 
-		opts := append(
-			tt.executorOpts,
+		// Setup logging.
+		levelVar := new(slog.LevelVar)
+		levelVar.Set(slog.LevelInfo)
+		logOpts := &slog.HandlerOptions{Level: levelVar}
+		logHandler := rlog.NewCliHandler(&buffer, &buffer, false, logOpts)
+		baseCtx := t.Context()
+		ctx := rlog.WithContext(baseCtx, logHandler)
+
+		opts := []task.ExecutorOption{
+			task.WithLevelVar(levelVar),
 			task.WithStdout(&buffer),
 			task.WithStderr(&buffer),
+		}
+		opts = append(
+			opts,
+			tt.executorOpts...,
 		)
 
 		// If the test has input, create a reader for it and add it to the
@@ -156,18 +168,6 @@ func (tt *ExecutorTest) run(t *testing.T) {
 			goldie.WithFixtureDir(filepath.Join(e.Dir, "testdata")),
 			goldie.WithEqualFn(NormalizedEqual),
 		)
-
-		// Setup logging.
-		logOpts := &slog.HandlerOptions{Level: slog.LevelInfo}
-		if e.Silent {
-			logOpts.Level = slog.LevelError
-		}
-		if e.Verbose {
-			logOpts.Level = slog.LevelDebug
-		}
-		logHandler := rlog.NewCliHandler(&buffer, &buffer, false, logOpts)
-		baseCtx := t.Context()
-		ctx := rlog.WithContext(baseCtx, logHandler)
 
 		// Call setup and check for errors
 		if err := e.Setup(ctx); tt.wantSetupError {
@@ -574,32 +574,6 @@ func TestStatus(t *testing.T) {
 			task.WithDir(dir),
 		),
 		WithTask("gen-bar"),
-	)
-	// sources: not up-to-date, no output produced.
-	NewExecutorTest(t,
-		WithName("run gen-baz 2"),
-		WithExecutorOptions(
-			task.WithDir(dir),
-		),
-		WithTask("gen-silent-baz"),
-	)
-	// up-to-date, no output produced
-	NewExecutorTest(t,
-		WithName("run gen-baz 3"),
-		WithExecutorOptions(
-			task.WithDir(dir),
-		),
-		WithTask("gen-silent-baz"),
-	)
-	// up-to-date, output produced due to Verbose mode.
-	NewExecutorTest(t,
-		WithName("run gen-baz 4 verbose"),
-		WithExecutorOptions(
-			task.WithDir(dir),
-			task.WithVerbose(true),
-		),
-		WithTask("gen-silent-baz"),
-		WithFixtureTemplating(),
 	)
 }
 
@@ -1088,18 +1062,6 @@ func TestIncludeChecksum(t *testing.T) {
 		),
 		WithSetupError(),
 		WithFixtureTemplating(),
-	)
-}
-
-func TestIncludeSilent(t *testing.T) {
-	t.Parallel()
-
-	NewExecutorTest(t,
-		WithName("include-taskfile-silent"),
-		WithExecutorOptions(
-			task.WithDir("testdata/includes_silent"),
-		),
-		WithTask("default"),
 	)
 }
 

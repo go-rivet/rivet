@@ -26,9 +26,8 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	// FIXME: log level
 	logLevelVar := &slog.LevelVar{}
-	logLevelVar.Set(slog.LevelInfo)
+	logLevelVar.Set(flags.LogLevel(flags.Verbose))
 
 	rlog.Init(rlog.RlogOptions{
 		Stdout: os.Stdout,
@@ -132,9 +131,6 @@ func run(ctx context.Context) error {
 		flags.Nested,
 	)
 	if listOptions.ShouldListTasks() {
-		if flags.Silent {
-			return e.ListTaskNames(flags.ListAll)
-		}
 		foundTasks, err := e.ListTasks(listOptions)
 		if err != nil {
 			return err
@@ -169,8 +165,6 @@ func run(ctx context.Context) error {
 	specialVars.Set("CLI_ARGS", ast.Var{Value: cliArgsPostDashQuoted})
 	specialVars.Set("CLI_ARGS_LIST", ast.Var{Value: cliArgsPostDash})
 	specialVars.Set("CLI_FORCE", ast.Var{Value: flags.Force || flags.ForceAll})
-	specialVars.Set("CLI_SILENT", ast.Var{Value: flags.Silent})
-	specialVars.Set("CLI_VERBOSE", ast.Var{Value: flags.Verbose})
 	specialVars.Set("CLI_OFFLINE", ast.Var{Value: flags.Offline})
 	specialVars.Set("CLI_ASSUME_YES", ast.Var{Value: flags.AssumeYes})
 	e.Taskfile.Vars.ReverseMerge(specialVars, nil)

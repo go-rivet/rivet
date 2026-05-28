@@ -3,6 +3,7 @@ package rivet
 import (
 	"context"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -42,8 +43,7 @@ type (
 		Cert                string
 		CertKey             string
 		Watch               bool
-		Verbose             bool
-		Silent              bool
+		LevelVar            *slog.LevelVar
 		DisableFuzzy        bool
 		AssumeYes           bool
 		AssumeTerm          bool // Used for testing
@@ -364,7 +364,25 @@ type verboseOption struct {
 }
 
 func (o *verboseOption) ApplyToExecutor(e *Executor) {
-	e.Verbose = o.verbose
+	if e.LevelVar == nil {
+		e.LevelVar = new(slog.LevelVar)
+		e.LevelVar.Set(slog.LevelInfo)
+	}
+	if o.verbose {
+		e.LevelVar.Set(slog.LevelDebug)
+	}
+}
+
+func WithLevelVar(levelVar *slog.LevelVar) ExecutorOption {
+	return &verboseLevelVar{levelVar}
+}
+
+type verboseLevelVar struct {
+	levelVar *slog.LevelVar
+}
+
+func (o *verboseLevelVar) ApplyToExecutor(e *Executor) {
+	e.LevelVar = o.levelVar
 }
 
 // WithSilent tells the [Executor] to suppress all output except for the output
@@ -378,7 +396,13 @@ type silentOption struct {
 }
 
 func (o *silentOption) ApplyToExecutor(e *Executor) {
-	e.Silent = o.silent
+	if e.LevelVar == nil {
+		e.LevelVar = new(slog.LevelVar)
+		e.LevelVar.Set(slog.LevelInfo) // int(flags.LevelNone)
+	}
+	if o.silent {
+		e.LevelVar.Set(slog.LevelWarn) // int(flags.LevelNone)
+	}
 }
 
 // WithDisableFuzzy tells the [Executor] to disable fuzzy matching for task names.

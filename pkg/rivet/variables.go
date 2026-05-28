@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-rivet/rivet/internal/deepcopy"
 	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/filepathext"
@@ -56,7 +55,6 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 		Vars:                 vars,
 		Env:                  nil,
 		Dotenv:               origTask.Dotenv,
-		Silent:               deepcopy.Scalar(origTask.Silent),
 		Interactive:          origTask.Interactive,
 		Internal:             origTask.Internal,
 		Method:               origTask.Method,
@@ -171,7 +169,6 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 		Vars:                 vars,
 		Env:                  nil,
 		Dotenv:               templater.Replace(origTask.Dotenv, cache),
-		Silent:               deepcopy.Scalar(origTask.Silent),
 		Interactive:          origTask.Interactive,
 		Internal:             origTask.Internal,
 		Method:               templater.Replace(origTask.Method, cache),

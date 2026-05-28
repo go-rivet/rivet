@@ -259,13 +259,11 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			}
 
 			if upToDate && preCondMet {
-				if e.Verbose || (!call.Silent && !t.IsSilent() && !e.Taskfile.Silent && !e.Silent) {
-					name := t.Name()
-					if e.OutputStyle.Name == "prefixed" {
-						name = t.Prefix
-					}
-					rlog.Errorf(ctx, "task: Task %q is up to date\n", name)
+				name := t.Name()
+				if e.OutputStyle.Name == "prefixed" {
+					name = t.Prefix
 				}
+				rlog.Infof(ctx, "task: Task %q is up to date\n", name)
 				return nil
 			}
 		}
@@ -344,7 +342,7 @@ func (e *Executor) runDeps(ctx context.Context, t *ast.Task) error {
 
 	for _, d := range t.Deps {
 		g.Go(func() error {
-			err := e.RunTask(ctx, &Call{Task: d.Task, Vars: d.Vars, Silent: d.Silent, Indirect: true})
+			err := e.RunTask(ctx, &Call{Task: d.Task, Vars: d.Vars, Indirect: true})
 			if err != nil {
 				return err
 			}
@@ -397,7 +395,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		reacquire := e.releaseConcurrencyLimit()
 		defer reacquire()
 
-		err := e.RunTask(ctx, &Call{Task: cmd.Task, Vars: cmd.Vars, Silent: cmd.Silent, Indirect: true})
+		err := e.RunTask(ctx, &Call{Task: cmd.Task, Vars: cmd.Vars, Indirect: true})
 		var exitCode interp.ExitStatus
 		if errors.As(err, &exitCode) && cmd.IgnoreError {
 			rlog.Debugf(ctx, "task: [%s] task error ignored: %v\n", t.Name(), err)
@@ -410,9 +408,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 			return nil
 		}
 
-		if e.Verbose || (!call.Silent && !cmd.Silent && !t.IsSilent() && !e.Taskfile.Silent && !e.Silent) {
-			rlog.Errorf(ctx, "task: [%s] %s\n", t.Name(), cmd.Cmd)
-		}
+		rlog.Infof(ctx, "task: [%s] %s\n", t.Name(), cmd.Cmd)
 
 		if e.Dry {
 			return nil
