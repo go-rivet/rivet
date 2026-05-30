@@ -28,7 +28,6 @@ type Taskfile struct {
 	Set      []string
 	Shopt    []string
 	Vars     *Vars
-	Env      *Vars
 	Tasks    *Tasks
 	Dotenv   []string
 	Run      string
@@ -52,14 +51,10 @@ func (t1 *Taskfile) Merge(t2 *Taskfile, include *Include) error {
 	if t1.Vars == nil {
 		t1.Vars = NewVars()
 	}
-	if t1.Env == nil {
-		t1.Env = NewVars()
-	}
 	if t1.Tasks == nil {
 		t1.Tasks = NewTasks()
 	}
 	t1.Vars.Merge(t2.Vars, include)
-	t1.Env.Merge(t2.Env, include)
 	return t1.Tasks.Merge(t2.Tasks, include, t1.Vars)
 }
 
@@ -74,7 +69,6 @@ func (tf *Taskfile) UnmarshalYAML(node *yaml.Node) error {
 			Set      []string
 			Shopt    []string
 			Vars     *Vars
-			Env      *Vars
 			Tasks    *Tasks
 			Dotenv   []string
 			Run      string
@@ -90,7 +84,6 @@ func (tf *Taskfile) UnmarshalYAML(node *yaml.Node) error {
 		tf.Set = taskfile.Set
 		tf.Shopt = taskfile.Shopt
 		tf.Vars = taskfile.Vars
-		tf.Env = taskfile.Env
 		tf.Tasks = taskfile.Tasks
 		tf.Dotenv = taskfile.Dotenv
 		tf.Run = taskfile.Run
@@ -100,9 +93,6 @@ func (tf *Taskfile) UnmarshalYAML(node *yaml.Node) error {
 		}
 		if tf.Vars == nil {
 			tf.Vars = NewVars()
-		}
-		if tf.Env == nil {
-			tf.Env = NewVars()
 		}
 		if tf.Tasks == nil {
 			tf.Tasks = NewTasks()

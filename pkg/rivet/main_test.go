@@ -25,15 +25,4 @@ func TestMain(m *testing.M) {
 	slog.SetDefault(slog.New(rlog.NewTestLogRouter(fallbackHandler)))
 
 	os.Exit(m.Run())
-
-	// rlog.Init(rlog.RlogOptions{
-	// 	Stdout: os.Stdout,
-	// 	Stderr: os.Stderr,
-	// 	// FIXME: log level
-	// 	// FIXME: format
-	// 	Level: testLogLevel,
-	// 	//Color: flags.Color,
-	// })
-
-	// os.Exit(m.Run())
 }

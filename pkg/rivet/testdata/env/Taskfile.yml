@@ -3,11 +3,8 @@ version: '3'
 vars:
   BAZ:
     sh: echo baz
-
-env:
   FOO: foo
   BAR: bar
-  BAZ: "{{.BAZ}}"
   QUX: from_taskfile
 
 tasks:
@@ -22,7 +19,6 @@ tasks:
   local:
     vars:
       AMD64: amd64
-    env:
       GOOS: linux
       GOARCH: "{{.AMD64}}"
       CGO_ENABLED:
@@ -31,13 +27,13 @@ tasks:
       - echo "GOOS='$GOOS' GOARCH='$GOARCH' CGO_ENABLED='$CGO_ENABLED'"
 
   global:
-    env:
+    vars:
       BAR: overridden
     cmds:
       - echo "FOO='$FOO' BAR='$BAR' BAZ='$BAZ'"
 
   multiple_type:
-    env:
+    vars:
       FOO: 1
       BAR: true
       BAZ: 1.1

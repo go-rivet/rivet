@@ -3,11 +3,9 @@ package rivet
 import (
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/internal/fingerprint"
@@ -53,7 +51,6 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 		Set:                  origTask.Set,
 		Shopt:                origTask.Shopt,
 		Vars:                 vars,
-		Env:                  nil,
 		Dotenv:               origTask.Dotenv,
 		Interactive:          origTask.Interactive,
 		Internal:             origTask.Internal,
@@ -70,54 +67,6 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 		Namespace:            origTask.Namespace,
 		Failfast:             origTask.Failfast,
 	}, nil
-}
-
-func (e *Executor) taskEnv(t *ast.Task, origTaskEnv *ast.Vars, cache *templater.Cache, evaluateShVars bool) (*ast.Vars, error) {
-	taskEnv := ast.NewVars()
-	if cache == nil {
-		cache = &templater.Cache{Vars: t.Vars}
-	}
-
-	// Load dotenv files based on the templated list of t.Dotenv files.
-	dotenvEnvs := ast.NewVars()
-	if len(t.Dotenv) > 0 {
-		for _, dotEnvPath := range t.Dotenv {
-			dotEnvPath = filepathext.SmartJoin(t.Dir, dotEnvPath)
-			if _, err := os.Stat(dotEnvPath); os.IsNotExist(err) {
-				continue
-			}
-			envs, err := env.LoadDotenv(dotEnvPath)
-			if err != nil {
-				return nil, err
-			}
-			for key, value := range envs {
-				if _, ok := dotenvEnvs.Get(key); !ok {
-					dotenvEnvs.Set(key, ast.Var{Value: value})
-				}
-			}
-		}
-	}
-
-	// Merge the Task envars => destination (by-caller) is typically t.Env
-	taskEnv.Merge(templater.ReplaceVars(e.Taskfile.Env, cache), nil)
-	taskEnv.Merge(templater.ReplaceVars(dotenvEnvs, cache), nil)
-	taskEnv.Merge(templater.ReplaceVars(origTaskEnv, cache), nil)
-	if evaluateShVars {
-		for k, v := range taskEnv.All() {
-			// If the variable is not dynamic, we can set it and return
-			if v.Value != nil || v.Sh == nil {
-				taskEnv.Set(k, ast.Var{Value: v.Value})
-				continue
-			}
-			static, err := e.Compiler.HandleDynamicVar(e.ctx, v, t.Dir, env.GetFromVars(taskEnv))
-			if err != nil {
-				return nil, err
-			}
-			taskEnv.Set(k, ast.Var{Value: static})
-		}
-	}
-
-	return taskEnv, nil
 }
 
 func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, error) {
@@ -167,7 +116,6 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 		Set:                  origTask.Set,
 		Shopt:                origTask.Shopt,
 		Vars:                 vars,
-		Env:                  nil,
 		Dotenv:               templater.Replace(origTask.Dotenv, cache),
 		Interactive:          origTask.Interactive,
 		Internal:             origTask.Internal,
@@ -195,11 +143,6 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 	}
 	if new.Prefix == "" {
 		new.Prefix = new.Task
-	}
-
-	new.Env, err = e.taskEnv(&new, origTask.Env, cache, evaluateShVars)
-	if err != nil {
-		return nil, err
 	}
 
 	if len(origTask.Sources) > 0 && origTask.Method != "none" {

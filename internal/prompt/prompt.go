@@ -18,7 +18,6 @@ var (
 )
 
 func Prompt(ctx context.Context, prompt string, defaultValue string, assumeTerm bool, assumeYes bool, continueValues ...string) error {
-	// FIXME: use log console ??
 	if assumeYes {
 		rlog.Outf(ctx, rlog.Default, "%s [assuming yes]\n", prompt)
 		return nil

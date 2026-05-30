@@ -5,7 +5,6 @@ dotenv:
   - 'global.env'
 vars:
   VAR: entrypoint-global-vars
-env:
   ENV: entrypoint-global-vars
 
 includes:

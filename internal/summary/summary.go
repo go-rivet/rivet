@@ -33,7 +33,6 @@ func PrintTask(ctx context.Context, t *ast.Task) {
 	printTaskName(ctx, t)
 	printTaskDescribingText(ctx, t)
 	printTaskVars(ctx, t)
-	printTaskEnv(ctx, t)
 	printTaskRequires(ctx, t)
 	printTaskDependencies(ctx, t)
 	printTaskAliases(ctx, t)
@@ -132,16 +131,9 @@ func printTaskVars(ctx context.Context, t *ast.Task) {
 
 	osEnvVars := getEnvVarNames()
 
-	taskfileEnvVars := make(map[string]bool)
-	if t.Env != nil {
-		for key := range t.Env.All() {
-			taskfileEnvVars[key] = true
-		}
-	}
-
 	hasNonEnvVars := false
 	for key := range t.Vars.All() {
-		if !isEnvVar(key, osEnvVars) && !taskfileEnvVars[key] {
+		if !isEnvVar(key, osEnvVars) {
 			hasNonEnvVars = true
 			break
 		}
@@ -156,38 +148,7 @@ func printTaskVars(ctx context.Context, t *ast.Task) {
 
 	for key, value := range t.Vars.All() {
 		// Only display variables that are not from OS environment or Taskfile env
-		if !isEnvVar(key, osEnvVars) && !taskfileEnvVars[key] {
-			formattedValue := formatVarValue(value)
-			rlog.OutRawf(ctx, rlog.Yellow, "  %s: %s\n", key, formattedValue)
-		}
-	}
-}
-
-func printTaskEnv(ctx context.Context, t *ast.Task) {
-	if t.Env == nil || t.Env.Len() == 0 {
-		return
-	}
-
-	envVars := getEnvVarNames()
-
-	hasNonEnvVars := false
-	for key := range t.Env.All() {
-		if !isEnvVar(key, envVars) {
-			hasNonEnvVars = true
-			break
-		}
-	}
-
-	if !hasNonEnvVars {
-		return
-	}
-
-	rlog.OutRawf(ctx, rlog.Default, "\n")
-	rlog.OutRawf(ctx, rlog.Default, "env:\n")
-
-	for key, value := range t.Env.All() {
-		// Only display variables that are not from OS environment
-		if !isEnvVar(key, envVars) {
+		if !isEnvVar(key, osEnvVars) {
 			formattedValue := formatVarValue(value)
 			rlog.OutRawf(ctx, rlog.Yellow, "  %s: %s\n", key, formattedValue)
 		}

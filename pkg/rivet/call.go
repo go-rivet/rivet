@@ -7,4 +7,6 @@ type Call struct {
 	Task     string
 	Vars     *ast.Vars
 	Indirect bool // True if the task was called by another task
+
+	TaskDotenv DotEnv
 }

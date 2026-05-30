@@ -43,7 +43,9 @@ func (e *Executor) Setup(ctx context.Context) error {
 	if err := e.setupCompiler(); err != nil {
 		return err
 	}
-	if err := e.readDotEnvFiles(); err != nil {
+	_tv, _ := e.Compiler.GetTaskfileVariables(e.ctx)
+	e.Compiler.TaskfileDotenv.Files = e.Taskfile.Dotenv
+	if _, err := e.Compiler.TaskfileDotenv.Load(e.Dir, _tv, nil); err != nil {
 		return err
 	}
 	if err := e.doVersionChecks(); err != nil {
@@ -84,7 +86,7 @@ func (e *Executor) readTaskfile(node taskfile.Node) error {
 		rlog.Debug(ctx, s)
 	}
 	promptFunc := func(s string) error {
-		return prompt.Prompt(ctx, s, "n", false, true, "y", "yes") // FIXME: use flag
+		return prompt.Prompt(ctx, s, "n", false, true, "y", "yes")
 	}
 	reader := taskfile.NewReader(
 		taskfile.WithInsecure(e.Insecure),
@@ -213,37 +215,9 @@ func (e *Executor) setupCompiler() error {
 		Entrypoint:     e.Entrypoint,
 		UserWorkingDir: e.UserWorkingDir,
 		RootDir:        e.RootDir,
-		TaskfileEnv:    e.Taskfile.Env,
 		TaskfileVars:   e.Taskfile.Vars,
 	}
 	return nil
-}
-
-func (e *Executor) readDotEnvFiles() error {
-	if e.Taskfile == nil || len(e.Taskfile.Dotenv) == 0 {
-		return nil
-	}
-
-	if e.Taskfile.Version.LessThan(ast.V3) {
-		return nil
-	}
-
-	vars, err := e.Compiler.GetTaskfileVariables(e.ctx)
-	if err != nil {
-		return err
-	}
-
-	env, err := taskfile.Dotenv(vars, e.Taskfile, e.Dir)
-	if err != nil {
-		return err
-	}
-
-	for k, v := range env.All() {
-		if _, ok := e.Taskfile.Env.Get(k); !ok {
-			e.Taskfile.Env.Set(k, v)
-		}
-	}
-	return err
 }
 
 func (e *Executor) setupDefaults() {

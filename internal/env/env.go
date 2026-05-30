@@ -24,24 +24,14 @@ func GetEnviron() *ast.Vars {
 	return m
 }
 
-func Get(t *ast.Task) []string {
-	if t.Env == nil {
-		return nil
-	}
-
-	return GetFromVars(t.Env)
-}
-
-func GetFromVars(env *ast.Vars) []string {
-	environ := os.Environ()
-
-	for k, v := range env.ToCacheMap() {
+func GetFromVars(vars *ast.Vars) []string {
+	environ := []string{}
+	for k, v := range vars.ToCacheMap() {
 		if !isTypeAllowed(v) {
 			continue
 		}
 		environ = append(environ, fmt.Sprintf("%s=%v", k, v))
 	}
-
 	return environ
 }
 

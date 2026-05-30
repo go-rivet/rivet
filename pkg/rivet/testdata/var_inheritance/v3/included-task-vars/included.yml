@@ -3,7 +3,6 @@ version: '3'
 silent: true
 vars:
   VAR: included-global-vars
-env:
   ENV: included-global-vars
 
 tasks:
@@ -12,7 +11,6 @@ tasks:
       - 'task.env'
     vars:
       VAR: included-task-vars
-    env:
       ENV: included-task-vars
     cmds:
       - 'echo "{{.VAR}}"'

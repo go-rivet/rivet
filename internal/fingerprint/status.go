@@ -21,7 +21,7 @@ func (checker *StatusChecker) IsUpToDate(ctx context.Context, t *ast.Task) (bool
 		err := execext.RunCommand(ctx, &execext.RunCommandOptions{
 			Command: s,
 			Dir:     t.Dir,
-			Env:     env.Get(t),
+			Env:     env.GetFromVars(t.Vars),
 		})
 		if err != nil {
 			rlog.Debugf(ctx, "task: status command %s exited non-zero: %s\n", s, err)

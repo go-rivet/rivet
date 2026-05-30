@@ -30,7 +30,6 @@ type Task struct {
 	Set           []string
 	Shopt         []string
 	Vars          *Vars
-	Env           *Vars
 	Dotenv        []string
 	Interactive   bool
 	Internal      bool
@@ -135,7 +134,6 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 			Set           []string
 			Shopt         []string
 			Vars          *Vars
-			Env           *Vars
 			Dotenv        []string
 			Interactive   bool
 			Internal      bool
@@ -174,7 +172,6 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 		t.Set = task.Set
 		t.Shopt = task.Shopt
 		t.Vars = task.Vars
-		t.Env = task.Env
 		t.Dotenv = task.Dotenv
 		t.Interactive = task.Interactive
 		t.Internal = task.Internal
@@ -216,7 +213,6 @@ func (t *Task) DeepCopy() *Task {
 		Set:                  deepcopy.Slice(t.Set),
 		Shopt:                deepcopy.Slice(t.Shopt),
 		Vars:                 t.Vars.DeepCopy(),
-		Env:                  t.Env.DeepCopy(),
 		Dotenv:               deepcopy.Slice(t.Dotenv),
 		Interactive:          t.Interactive,
 		Internal:             t.Internal,

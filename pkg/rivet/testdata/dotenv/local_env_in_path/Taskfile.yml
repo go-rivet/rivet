@@ -1,6 +1,6 @@
 version: "3"
 
-env:
+vars:
   LOCAL_ENV: testing
 
 dotenv: [".env.{{.LOCAL_ENV}}"]

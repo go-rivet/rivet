@@ -1988,7 +1988,7 @@ func TestTaskDotenv(t *testing.T) {
 		Target:    "dotenv",
 		TrimSpace: true,
 		Files: map[string]string{
-			"dotenv.txt": "foo",
+			"dotenv.txt": "global",
 		},
 	}
 	t.Run("", func(t *testing.T) {
@@ -2039,7 +2039,7 @@ func TestTaskDotenvWithVarName(t *testing.T) {
 		Target:    "dotenv-with-var-name",
 		TrimSpace: true,
 		Files: map[string]string{
-			"dotenv-with-var-name.txt": "foo",
+			"dotenv-with-var-name.txt": "global",
 		},
 	}
 	t.Run("", func(t *testing.T) {

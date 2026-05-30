@@ -5,7 +5,6 @@ dotenv:
   - 'global.env'
 vars:
   VAR: entrypoint-global-vars
-env:
   ENV: entrypoint-global-vars
 
 tasks:
@@ -20,7 +19,6 @@ tasks:
   called-task:
     vars:
       VAR: entrypoint-task-call-task-vars
-    env:
       ENV: entrypoint-task-call-task-vars
     cmds:
       - 'echo "{{.VAR}}"'

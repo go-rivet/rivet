@@ -201,7 +201,6 @@ func getTaskPath() (string, error) {
 // Return the difference of the two lists: the elements that are present in the first
 // list, but not in the second one. The notion of presence is not with `=` but with
 // string.Contains(l2, l1).
-// FIXME this does not enforce ordering. We might want to support both.
 func listDifference(lines1, lines2 []string) []string {
 	difference := []string{}
 	for _, l1 := range lines1 {
@@ -222,7 +221,6 @@ func listDifference(lines1, lines2 []string) []string {
 
 // Return the intersection of the two lists: the elements that are present in both lists.
 // The notion of presence is not with '=' but with string.Contains(l2, l1)
-// FIXME this does not enforce ordering. We might want to support both.
 func listIntersection(lines1, lines2 []string) []string {
 	intersection := []string{}
 	for _, l1 := range lines1 {

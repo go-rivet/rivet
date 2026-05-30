@@ -162,6 +162,10 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			rlog.Warnf(ctx, "task: cannot make directory %q: %v\n", t.Dir, err)
 		}
 	}
+	call.TaskDotenv.Files = t.Dotenv
+	if _, err := call.TaskDotenv.Load(t.Dir, nil, nil); err != nil {
+		return err
+	}
 	t, err = e.CompiledTask(call)
 	if err != nil {
 		return err
@@ -172,7 +176,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 		if err := execext.RunCommand(ctx, &execext.RunCommandOptions{
 			Command: t.If,
 			Dir:     t.Dir,
-			Env:     env.Get(t),
+			Env:     env.GetFromVars(t.Vars),
 		}); err != nil {
 			rlog.Debugf(ctx, "task: if condition not met - skipped: %q\n", call.Task)
 			return nil
@@ -221,12 +225,10 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			if err := e.runDeps(ctx, t); err != nil {
 				return err
 			}
-			if len(t.Dotenv) > 0 {
-				origTask, err := e.GetTask(call)
-				if err != nil {
-					return err
-				}
-				t.Env, err = e.taskEnv(t, origTask.Env, nil, true)
+			if changed, err := call.TaskDotenv.Load(t.Dir, nil, nil); err != nil {
+				return err
+			} else if changed {
+				t, err = e.CompiledTask(call)
 				if err != nil {
 					return err
 				}
@@ -383,7 +385,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		if err := execext.RunCommand(ctx, &execext.RunCommandOptions{
 			Command: cmd.If,
 			Dir:     t.Dir,
-			Env:     env.Get(t),
+			Env:     env.GetFromVars(t.Vars),
 		}); err != nil {
 			rlog.Debugf(ctx, "task: [%s] if condition not met - skipped\n", t.Name())
 			return nil
@@ -449,7 +451,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		err = execext.RunCommand(ctx, &execext.RunCommandOptions{
 			Command:   cmd.Cmd,
 			Dir:       t.Dir,
-			Env:       env.Get(t),
+			Env:       env.GetFromVars(t.Vars),
 			PosixOpts: slicesext.UniqueJoin(e.Taskfile.Set, t.Set, cmd.Set),
 			BashOpts:  slicesext.UniqueJoin(e.Taskfile.Shopt, t.Shopt, cmd.Shopt),
 			Stdin:     e.Stdin,

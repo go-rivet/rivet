@@ -1,6 +1,6 @@
 version: '3'
 
-env:
+vars:
   FOO: global
 
 tasks:
@@ -11,7 +11,7 @@ tasks:
 
   dotenv-overridden-by-env:
     dotenv: ['.env']
-    env:
+    vars:
       FOO: overridden
     cmds:
       - echo "$FOO" > dotenv-overridden-by-env.txt
