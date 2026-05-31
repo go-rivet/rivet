@@ -9,6 +9,7 @@ bin/
 
 # Avoid committing your project's local builds
 /rivet
+build/
 
 # === Testing and Coverage Outputs ===
 .task

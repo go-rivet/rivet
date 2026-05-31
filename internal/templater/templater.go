@@ -1,3 +1,4 @@
+//go:generate go run ../../cmd/docgen/main.go
 package templater
 
 import (
@@ -11,8 +12,23 @@ import (
 	"github.com/go-task/template"
 
 	"github.com/go-rivet/rivet/internal/deepcopy"
+	"github.com/go-rivet/rivet/internal/templater/sprig"
+	"github.com/go-rivet/rivet/internal/templater/task"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 )
+
+var funcs template.FuncMap
+
+func init() {
+	maps.Copy(funcs, sprig.SprigFuncs)
+	maps.Copy(funcs, task.TaskFuncs)
+
+	// aliases
+	funcs["q"] = task.TaskFuncs["shellQuote"]
+	funcs["FromSlash"] = task.TaskFuncs["fromSlash"]
+	funcs["ToSlash"] = task.TaskFuncs["toSlash"]
+	funcs["ExeExt"] = task.TaskFuncs["exeExt"]
+}
 
 // Cache is a help struct that allow us to call "replaceX" funcs multiple
 // times, without having to check for error each time. The first error that
@@ -47,7 +63,7 @@ func ResolveRef(ref string, cache *Cache) any {
 	if ref == "." {
 		return cache.cacheMap
 	}
-	t, err := template.New("resolver").Funcs(templateFuncs).Parse(fmt.Sprintf("{{%s}}", ref))
+	t, err := template.New("resolver").Funcs(funcs).Parse(fmt.Sprintf("{{%s}}", ref))
 	if err != nil {
 		cache.err = err
 		return nil
@@ -79,7 +95,7 @@ func resolveDirectLookup(text string, cache *Cache) any {
 	}
 
 	// Resolve the lookup.
-	t, err := template.New("resolver").Funcs(templateFuncs).Parse(text)
+	t, err := template.New("resolver").Funcs(funcs).Parse(text)
 	if err != nil {
 		cache.err = err
 		return nil
@@ -127,7 +143,7 @@ func ReplaceWithExtra[T any](v T, cache *Cache, extra map[string]any) T {
 		if !strings.Contains(v, "{{") {
 			return v, nil
 		}
-		tpl, err := template.New("").Funcs(templateFuncs).Parse(v)
+		tpl, err := template.New("").Funcs(funcs).Parse(v)
 		if err != nil {
 			return v, err
 		}

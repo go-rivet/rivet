@@ -38,7 +38,7 @@ ifeq ($(GOBIN),)
 GOBIN=$(GOPATH)/bin
 endif
 
-.PHONY: all build clean run release test test-all generate mod lint install help $(PLATFORMS)
+.PHONY: all build clean run release test test-all generate generate-fixtures mod lint install help $(PLATFORMS)
 
 # Default target runs help to guide the user
 all: help
@@ -83,8 +83,11 @@ lint:
 	@echo "Running golangci-lint..."
 	golangci-lint run --fix ./...
 
-## generate: Generate golden fixture files
 generate:
+	go generate ./...
+
+## generate: Generate golden fixture files
+generate-fixtures:
 	@echo "==> Cleaning old golden fixtures..."
 	find ./testdata -name '*.golden' -delete 2>/dev/null || true
 	@echo "==> Generating new golden fixtures via go test..."
