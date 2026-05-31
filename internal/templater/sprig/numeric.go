@@ -42,7 +42,11 @@ func toInt64(v interface{}) int64 {
 }
 
 func toInt(v interface{}) int {
-	return int(toInt64(v))
+	i := toInt64(v)
+	if strconv.IntSize == 32 && (i > int64(math.MaxInt32) || i < int64(math.MinInt32)) {
+		return 0
+	}
+	return int(i)
 }
 
 func max(a interface{}, i ...interface{}) int64 {
