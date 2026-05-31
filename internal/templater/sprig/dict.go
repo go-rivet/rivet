@@ -1,9 +1,5 @@
 package sprig
 
-import (
-	"fmt"
-)
-
 func pluck(key string, d ...map[string]interface{}) []interface{} {
 	res := []interface{}{}
 	for _, dict := range d {
@@ -68,40 +64,4 @@ func values(dict map[string]interface{}) []interface{} {
 		vals = append(vals, value)
 	}
 	return vals
-}
-
-func dig(ps ...interface{}) interface{} {
-	if len(ps) < 3 {
-		panic("dig needs at least three arguments")
-	}
-
-	// Unpack inputs from the parameter slice
-	currentMap, ok := ps[len(ps)-1].(map[string]interface{})
-	if !ok {
-		panic("the last argument to dig must be a map[string]interface{}")
-	}
-	def := ps[len(ps)-2]
-
-	// Flattened iterative traversal to avoid multi-file recursion
-	for i := 0; i < len(ps)-2; i++ {
-		key, ok := ps[i].(string)
-		if !ok {
-			panic(fmt.Sprintf("dig keys must be strings, got %T", ps[i]))
-		}
-
-		step, found := currentMap[key]
-		if !found {
-			return def
-		}
-
-		if i == len(ps)-3 {
-			return step
-		}
-
-		currentMap, ok = step.(map[string]interface{})
-		if !ok {
-			return def
-		}
-	}
-	return def
 }

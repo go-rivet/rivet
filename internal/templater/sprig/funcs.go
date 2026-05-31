@@ -24,6 +24,9 @@ import (
 	mrand "math/rand/v2"
 
 	"text/template"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var SprigFuncs = template.FuncMap{
@@ -51,12 +54,12 @@ var SprigFuncs = template.FuncMap{
 	"base64encode": func(v string) string { return base64.StdEncoding.EncodeToString([]byte(v)) },
 	"base32encode": func(v string) string { return base32.StdEncoding.EncodeToString([]byte(v)) },
 	"indent": func(sp int, v string) string {
-		return strings.Repeat(" ", sp) + strings.Replace(v, "\n", "\n"+strings.Repeat(" ", sp), -1)
+		return strings.Repeat(" ", sp) + strings.ReplaceAll(v, "\n", "\n"+strings.Repeat(" ", sp))
 	},
 	"nindent": func(sp int, v string) string {
-		return "\n" + strings.Repeat(" ", sp) + strings.Replace(v, "\n", "\n"+strings.Repeat(" ", sp), -1)
+		return "\n" + strings.Repeat(" ", sp) + strings.ReplaceAll(v, "\n", "\n"+strings.Repeat(" ", sp))
 	},
-	"replace": func(old, new, src string) string { return strings.Replace(src, old, new, -1) },
+	"replace": func(old, new, src string) string { return strings.ReplaceAll(src, old, new) },
 	"plural": func(one, many string, count int) string {
 		if count == 1 {
 			return one
@@ -68,7 +71,7 @@ var SprigFuncs = template.FuncMap{
 	"trim":       strings.TrimSpace,
 	"upper":      strings.ToUpper,
 	"lower":      strings.ToLower,
-	"title":      strings.Title,
+	"title":      func(s string) string { return cases.Title(language.English).String(s) },
 	"substr":     substring,
 	"repeat":     func(count int, str string) string { return strings.Repeat(str, count) },
 	"trimAll":    func(a, b string) string { return strings.Trim(b, a) },

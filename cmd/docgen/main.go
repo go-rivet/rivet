@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type FunctionRow struct {
@@ -37,11 +40,32 @@ func main() {
 		folderName := entry.Name() // e.g., "task" or "sprig"
 		folderPath := filepath.Join(baseDir, folderName)
 
-		cleanFolderName := strings.Title(strings.ReplaceAll(folderName, "-", " "))
+		caser := cases.Title(language.English)
+		cleanFolderName := caser.String(strings.ReplaceAll(folderName, "-", " "))
 		pageTitle := fmt.Sprintf("%s Functions", cleanFolderName)
 
-		pkgs, err := parser.ParseDir(fset, folderPath, nil, parser.ParseComments)
+		// 1. Read files inside the directory
+		files, err := os.ReadDir(folderPath)
 		if err != nil {
+			continue
+		}
+
+		// 2. Parse Go files into an independent slice (replaces ast.Package completely)
+		var parsedFiles []*ast.File
+		for _, fileEntry := range files {
+			if fileEntry.IsDir() || !strings.HasSuffix(fileEntry.Name(), ".go") || strings.HasSuffix(fileEntry.Name(), "_test.go") {
+				continue
+			}
+
+			filePath := filepath.Join(folderPath, fileEntry.Name())
+			fileNode, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+			if err != nil {
+				continue
+			}
+			parsedFiles = append(parsedFiles, fileNode)
+		}
+
+		if len(parsedFiles) == 0 {
 			continue
 		}
 
@@ -50,50 +74,50 @@ func main() {
 		groupOrder := []string{}
 		groupMap := make(map[string][]FunctionRow)
 
-		for _, pkg := range pkgs {
-			for _, fileNode := range pkg.Files {
-				ast.Inspect(fileNode, func(n ast.Node) bool {
-					kv, ok := n.(*ast.KeyValueExpr)
-					if !ok {
-						return true
-					}
+		// 3. Iterate over our modern parsedFiles slice
+		for _, fileNode := range parsedFiles {
+			ast.Inspect(fileNode, func(n ast.Node) bool {
+				kv, ok := n.(*ast.KeyValueExpr)
+				if !ok {
+					return true
+				}
 
-					// 1. Identify and extract group headers
-					kvLine := fset.Position(kv.Pos()).Line
-					for _, cgo := range fileNode.Comments {
-						for _, comment := range cgo.List {
-							commentLine := fset.Position(comment.Pos()).Line
+				// Identify and extract group headers
+				kvLine := fset.Position(kv.Pos()).Line
+				for _, cgo := range fileNode.Comments {
+					for _, comment := range cgo.List {
+						commentLine := fset.Position(comment.Pos()).Line
 
-							if commentLine == kvLine-1 {
-								commentText := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
-								if strings.HasPrefix(commentText, "---") && strings.HasSuffix(commentText, "---") {
-									currentGroup = strings.Trim(commentText, "- ")
-								}
+						if commentLine == kvLine-1 {
+							commentText := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
+							if strings.HasPrefix(commentText, "---") && strings.HasSuffix(commentText, "---") {
+								currentGroup = strings.Trim(commentText, "- ")
 							}
 						}
 					}
+				}
 
-					// 2. Extract the actual template map row key
-					lit, ok := kv.Key.(*ast.BasicLit)
-					if !ok || lit.Kind != token.STRING {
-						return true
-					}
-					funcName := strings.Trim(lit.Value, `"`)
-
-					// Track unique group names sequentially to prevent duplication drops
-					if _, checked := groupMap[currentGroup]; !checked {
-						groupOrder = append(groupOrder, currentGroup)
-						groupMap[currentGroup] = []FunctionRow{}
-					}
-
-					sig := parseSignatureStatically(kv.Value, pkg)
-					groupMap[currentGroup] = append(groupMap[currentGroup], FunctionRow{
-						Name:      funcName,
-						Signature: sig,
-					})
+				// Extract the actual template map row key
+				lit, ok := kv.Key.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
 					return true
+				}
+				funcName := strings.Trim(lit.Value, `"`)
+
+				// Track unique group names sequentially to prevent duplication drops
+				if _, checked := groupMap[currentGroup]; !checked {
+					groupOrder = append(groupOrder, currentGroup)
+					groupMap[currentGroup] = []FunctionRow{}
+				}
+
+				// Pass the slice of sibling files to resolve function declarations
+				sig := parseSignatureStatically(kv.Value, parsedFiles)
+				groupMap[currentGroup] = append(groupMap[currentGroup], FunctionRow{
+					Name:      funcName,
+					Signature: sig,
 				})
-			}
+				return true
+			})
 		}
 
 		// Only compile and generate markdown files if active content was found
@@ -102,8 +126,8 @@ func main() {
 			slices.Sort(groupOrder)
 
 			var buf bytes.Buffer
-			buf.WriteString(fmt.Sprintf("---\ntitle: %s\nsidebar_label: %s\n---\n\n", pageTitle, cleanFolderName))
-			buf.WriteString(fmt.Sprintf("# %s\n\n", pageTitle))
+			fmt.Fprintf(&buf, "---\ntitle: %s\nsidebar_label: %s\n---\n\n", pageTitle, cleanFolderName)
+			fmt.Fprintf(&buf, "# %s\n\n", pageTitle)
 
 			for _, group := range groupOrder {
 				rows := groupMap[group]
@@ -116,10 +140,10 @@ func main() {
 					return strings.Compare(a.Name, b.Name)
 				})
 
-				buf.WriteString(fmt.Sprintf("\n### %s\n\n", group))
+				fmt.Fprintf(&buf, "\n### %s\n\n", group)
 				buf.WriteString("| Function | Go Signature |\n| :--- | :--- |\n")
 				for _, row := range rows {
-					buf.WriteString(fmt.Sprintf("| **`%s`** | `%s` |\n", row.Name, row.Signature))
+					fmt.Fprintf(&buf, "| **`%s`** | `%s` |\n", row.Name, row.Signature)
 				}
 			}
 
@@ -133,13 +157,14 @@ func main() {
 	}
 }
 
-// parseSignatureStatically resolves parameter text without importing application paths
-func parseSignatureStatically(expr ast.Expr, pkg *ast.Package) string {
+// parseSignatureStatically resolves parameter text across the parsed file tree slice
+func parseSignatureStatically(expr ast.Expr, folderFiles []*ast.File) string {
 	switch val := expr.(type) {
 	case *ast.FuncLit:
 		return formatFuncFields(val.Type)
 	case *ast.Ident:
-		for _, fileNode := range pkg.Files {
+		// Modern scanning across our explicit file slice instead of ast.Package map
+		for _, fileNode := range folderFiles {
 			for _, decl := range fileNode.Decls {
 				if fDecl, ok := decl.(*ast.FuncDecl); ok && fDecl.Name.Name == val.Name {
 					return formatFuncFields(fDecl.Type)

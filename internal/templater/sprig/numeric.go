@@ -109,9 +109,6 @@ func untilStep(start, stop, step int) []int {
 	return v
 }
 
-func floor(a interface{}) float64 { return math.Floor(toFloat64(a)) }
-func ceil(a interface{}) float64  { return math.Ceil(toFloat64(a)) }
-
 func round(a interface{}, p int, rOpt ...float64) float64 {
 	roundOn := 0.5
 	if len(rOpt) > 0 {
@@ -135,7 +132,8 @@ func toDecimal(v interface{}) int64 {
 }
 
 func seq(params ...int) string {
-	var start, end, step int = 1, 0, 1
+	var start, step = 1, 1
+	var end int
 	switch len(params) {
 	case 0:
 		return ""
