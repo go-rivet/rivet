@@ -7,8 +7,6 @@ require (
 	github.com/dominikbraun/graph v0.23.0
 	github.com/elliotchance/orderedmap/v3 v3.1.0
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/go-task/slim-sprig/v3 v3.0.0
-	github.com/go-task/template v0.2.0
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1

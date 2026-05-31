@@ -11,7 +11,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/go-task/template"
+	"text/template"
+
 	"go.yaml.in/yaml/v3"
 	"mvdan.cc/sh/v3/shell"
 	"mvdan.cc/sh/v3/syntax"

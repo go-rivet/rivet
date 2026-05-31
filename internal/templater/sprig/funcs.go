@@ -23,7 +23,7 @@ import (
 
 	mrand "math/rand/v2"
 
-	"github.com/go-task/template"
+	"text/template"
 )
 
 var SprigFuncs = template.FuncMap{

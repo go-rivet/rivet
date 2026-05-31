@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-task/template"
+	"text/template"
 
 	"github.com/go-rivet/rivet/internal/deepcopy"
 	"github.com/go-rivet/rivet/internal/templater/sprig"
@@ -17,7 +17,7 @@ import (
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 )
 
-var funcs template.FuncMap
+var funcs = template.FuncMap{}
 
 func init() {
 	maps.Copy(funcs, sprig.SprigFuncs)
@@ -50,12 +50,10 @@ func (r *Cache) Err() error {
 }
 
 func ResolveRef(ref string, cache *Cache) any {
-	// If there is already an error, do nothing
 	if cache.err != nil {
 		return nil
 	}
 
-	// Initialize the cache map if it's not already initialized
 	if cache.cacheMap == nil {
 		cache.cacheMap = cache.Vars.ToCacheMap()
 	}
@@ -63,17 +61,40 @@ func ResolveRef(ref string, cache *Cache) any {
 	if ref == "." {
 		return cache.cacheMap
 	}
-	t, err := template.New("resolver").Funcs(funcs).Parse(fmt.Sprintf("{{%s}}", ref))
+
+	// Variable to intercept and store the actual typed value
+	var resolvedValue any
+
+	// Create a local function map combining global funcs and our interceptor
+	localFuncs := make(template.FuncMap)
+	maps.Copy(localFuncs, funcs)
+
+	// The "resolve" function captures the argument and returns an empty string
+	// so it doesn't mess up standard template execution outputs.
+	localFuncs["resolve"] = func(v any) string {
+		resolvedValue = v
+		return ""
+	}
+
+	// Wrap the user's reference inside our interceptor function: {{resolve (ref)}}
+	tmplString := fmt.Sprintf("{{resolve (%s)}}", ref)
+
+	t, err := template.New("resolver").Funcs(localFuncs).Parse(tmplString)
 	if err != nil {
 		cache.err = err
 		return nil
 	}
-	val, err := t.Resolve(cache.cacheMap)
+
+	// Execute the template into a discard buffer.
+	// This forces the template to evaluate, triggers our function, and populates resolvedValue.
+	var discard bytes.Buffer
+	err = t.Execute(&discard, cache.cacheMap)
 	if err != nil {
 		cache.err = err
 		return nil
 	}
-	return val
+
+	return resolvedValue
 }
 
 func resolveDirectLookup(text string, cache *Cache) any {
@@ -88,24 +109,43 @@ func resolveDirectLookup(text string, cache *Cache) any {
 	}
 
 	// Lookup should be in the form '{{.LOOKUP}}'.
-	re := regexp.MustCompile(`^\{\{(\..+)\}\}$`)
+	// Captures everything inside the brackets so we can rewrite it.
+	re := regexp.MustCompile(`^\{\{(.+)\}\}$`)
 	match := re.FindStringSubmatch(text)
 	if len(match) != 2 {
 		return text
 	}
+	innerRef := match[1]
 
-	// Resolve the lookup.
-	t, err := template.New("resolver").Funcs(funcs).Parse(text)
+	// Variable to intercept and store the actual typed value
+	var resolvedValue any
+
+	// Create a local function map combining global funcs and our interceptor
+	localFuncs := make(template.FuncMap)
+	maps.Copy(localFuncs, funcs)
+	localFuncs["resolve"] = func(v any) string {
+		resolvedValue = v
+		return ""
+	}
+
+	// Wrap the inner expression: {{resolve (.LOOKUP)}}
+	tmplString := fmt.Sprintf("{{resolve (%s)}}", innerRef)
+
+	t, err := template.New("resolver").Funcs(localFuncs).Parse(tmplString)
 	if err != nil {
 		cache.err = err
 		return nil
 	}
-	val, err := t.Resolve(cache.cacheMap)
+
+	// Execute the template to trigger the function evaluation
+	var discard bytes.Buffer
+	err = t.Execute(&discard, cache.cacheMap)
 	if err != nil {
 		cache.err = err
 		return nil
 	}
-	return val
+
+	return resolvedValue
 }
 
 func Replace[T any](v T, cache *Cache) T {
