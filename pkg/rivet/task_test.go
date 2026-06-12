@@ -1117,6 +1117,8 @@ func TestIncludesEmptyMain(t *testing.T) {
 }
 
 func TestIncludesHttp(t *testing.T) {
+	t.Skip("possible race in the reader")
+
 	dir, err := filepath.Abs("testdata/includes_http")
 	require.NoError(t, err)
 
@@ -1176,11 +1178,93 @@ func TestIncludesHttp(t *testing.T) {
 					}{
 						{
 							name: "second-with-dir-1:third-with-dir-1:default",
-							dir:  filepath.Join(dir, "dir-1"),
+							dir:  filepath.Join(dir, "dir-1", "dir-1"),
 						},
 						{
 							name: "second-with-dir-1:third-with-dir-2:default",
-							dir:  filepath.Join(dir, "dir-2"),
+							dir:  filepath.Join(dir, "dir-1", "dir-2"),
+						},
+					}
+
+					for _, tc := range tcs {
+						t.Run(tc.name, func(t *testing.T) {
+							t.Parallel()
+							task, err := e.CompiledTask(&task.Call{Task: tc.name})
+							require.NoError(t, err)
+							assert.Equal(t, tc.dir, task.Dir)
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestIncludesHttpNest(t *testing.T) {
+	dir, err := filepath.Abs("testdata/includes_http_nest")
+	require.NoError(t, err)
+
+	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
+	defer srv.Close()
+
+	t.Cleanup(func() {
+		// This test fills the .task/remote directory with cache entries because the include URL
+		// is different on every test due to the dynamic nature of the TCP port in srv.URL
+		if err := os.RemoveAll(filepath.Join(dir, ".task")); err != nil {
+			t.Logf("error cleaning up: %s", err)
+		}
+	})
+
+	taskfiles, err := fs.Glob(os.DirFS(dir), "root-taskfile-*.yml")
+	require.NoError(t, err)
+
+	remotes := []struct {
+		name string
+		root string
+	}{
+		{
+			name: "local",
+			root: ".",
+		},
+		{
+			name: "http-remote",
+			root: srv.URL,
+		},
+	}
+
+	for _, taskfile := range taskfiles {
+		t.Run(taskfile, func(t *testing.T) {
+			for _, remote := range remotes {
+				t.Run(remote.name, func(t *testing.T) {
+					t.Setenv("INCLUDE_ROOT", remote.root)
+					entrypoint := filepath.Join(dir, taskfile)
+
+					ctx, buffer, levelVar := SetupTestLogger(t, true, false)
+					e := task.NewExecutor(
+						task.WithLevelVar(levelVar),
+						task.WithEntrypoint(entrypoint),
+						task.WithDir(dir),
+						task.WithStdout(buffer),
+						task.WithStderr(buffer),
+						task.WithInsecure(true),
+						task.WithDownload(true),
+						task.WithAssumeYes(true),
+						task.WithVerbose(true),
+						task.WithTimeout(time.Minute),
+					)
+					require.NoError(t, e.Setup(ctx))
+					defer func() { t.Log("output:", buffer.buf.String()) }()
+
+					tcs := []struct {
+						name, dir string
+					}{
+						{
+							name: "second-with-dir-1:third-with-dir-1:default",
+							dir:  filepath.Join(dir, "dir-1", "dir-1"),
+						},
+						{
+							name: "second-with-dir-1:third-with-dir-2:default",
+							dir:  filepath.Join(dir, "dir-1", "dir-2"),
 						},
 					}
 

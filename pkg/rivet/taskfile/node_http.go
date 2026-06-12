@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/filepathext"
+	"github.com/go-rivet/rivet/internal/fsext"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 )
 
@@ -77,6 +78,13 @@ func NewHTTPNode(
 	opts ...NodeOption,
 ) (*HTTPNode, error) {
 	base := NewBaseNode(dir, opts...)
+	if base.parent != nil {
+		resolvedDir, err := fsext.ResolveDir(entrypoint, base.parent.Dir(), dir)
+		if err != nil {
+			return nil, err
+		}
+		base.dir = resolvedDir
+	}
 	url, err := url.Parse(entrypoint)
 	if err != nil {
 		return nil, err
@@ -146,27 +154,22 @@ func (node *HTTPNode) ResolveEntrypoint(entrypoint string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return node.url.ResolveReference(ref).String(), nil
 }
 
 func (node *HTTPNode) ResolveDir(dir string) (string, error) {
-	path, err := execext.ExpandLiteral(dir)
-	if err != nil {
-		return "", err
+	if len(dir) == 0 {
+		// Resolve to the current node.Dir().
+		return node.Dir(), nil
+	} else {
+		// Resolve include.Dir, relative to this node.Dir(), or absolute.
+		dir, err := execext.ExpandLiteral(dir)
+		if err != nil {
+			return "", err
+		}
+		return filepathext.SmartJoin(node.Dir(), dir), nil
 	}
-
-	if filepathext.IsAbs(path) {
-		return path, nil
-	}
-
-	// NOTE: Uses the directory of the entrypoint (Taskfile), not the current working directory
-	// This means that files are included relative to one another
-	parent := node.Dir()
-	if node.Parent() != nil {
-		parent = node.Parent().Dir()
-	}
-
-	return filepathext.SmartJoin(parent, path), nil
 }
 
 func (node *HTTPNode) CacheKey() string {
