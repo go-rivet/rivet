@@ -1,13 +1,10 @@
 version: '3'
-
 method: none
-
 vars:
   GLOB_SINGLE: 'foo.*'
-  GLOB_ARRAY: ['*.txt', '*.yml'] 
-  GLOB_STRING: '*.txt:*.yml' 
+  GLOB_ARRAY: ['*.txt', '*.yml']
+  GLOB_STRING: '*.txt:*.yml'
   GLOB_SPLIT: '{{splitList ":" .GLOB_STRING | toJson}}'
-
 tasks:
   default:
     cmds:
@@ -20,42 +17,46 @@ tasks:
       - task: array
       - task: string
       - task: split
-
   direct:
-    sources:
-      - '*.txt'
     cmds:
       - echo "== {{.TASK}} =="
-      - for: sources 
+      - for: sources
         cmd: echo {{.ITEM}}
+    transforms:
+      - matches:
+          - '*.txt'
   single:
-    sources:
-      - '{{.GLOB_SINGLE}}'
     cmds:
       - echo "== {{.TASK}} =="
-      - for: sources 
+      - for: sources
         cmd: echo {{.ITEM}}
+    transforms:
+      - matches:
+          - '{{.GLOB_SINGLE}}'
   array:
-    sources:
-      - '{{.GLOB_ARRAY}}'
-      - exclude: Taskfile.yml
     cmds:
       - echo "== {{.TASK}} =="
-      - for: sources 
+      - for: sources
         cmd: echo {{.ITEM}}
+    transforms:
+      - matches:
+          - '{{.GLOB_ARRAY}}'
+          - exclude: Taskfile.yml
   string:
-    sources:
-      - '{{splitList ":" .GLOB_STRING | toJson}}'
-      - exclude: Taskfile.yml
     cmds:
       - echo "== {{.TASK}} =="
-      - for: sources 
+      - for: sources
         cmd: echo {{.ITEM}}
+    transforms:
+      - matches:
+          - '{{splitList ":" .GLOB_STRING | toJson}}'
+          - exclude: Taskfile.yml
   split:
-    sources:
-      - '{{.GLOB_SPLIT}}'
-      - exclude: Taskfile.yml
     cmds:
       - echo "== {{.TASK}} =="
-      - for: sources 
+      - for: sources
         cmd: echo {{.ITEM}}
+    transforms:
+      - matches:
+          - '{{.GLOB_SPLIT}}'
+          - exclude: Taskfile.yml

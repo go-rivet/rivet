@@ -36,8 +36,8 @@ func TestIsTaskUpToDate(t *testing.T) {
 		{
 			name: "expect FALSE when no status or sources are defined",
 			task: &ast.Task{
-				Status:  nil,
-				Sources: nil,
+				Status:     nil,
+				Transforms: nil,
 			},
 			setupMockStatusChecker:  nil,
 			setupMockSourcesChecker: nil,
@@ -46,8 +46,12 @@ func TestIsTaskUpToDate(t *testing.T) {
 		{
 			name: "expect TRUE when no status is defined and sources are up-to-date",
 			task: &ast.Task{
-				Status:  nil,
-				Sources: []*ast.Glob{{Glob: "sources"}},
+				Status: nil,
+				Transforms: []*ast.Transform{
+					{
+						Matches: []*ast.Glob{{Glob: "sources"}},
+					},
+				},
 			},
 			setupMockStatusChecker: nil,
 			setupMockSourcesChecker: func(m *MockSourcesCheckable) {
@@ -58,8 +62,12 @@ func TestIsTaskUpToDate(t *testing.T) {
 		{
 			name: "expect FALSE when no status is defined and sources are NOT up-to-date",
 			task: &ast.Task{
-				Status:  nil,
-				Sources: []*ast.Glob{{Glob: "sources"}},
+				Status: nil,
+				Transforms: []*ast.Transform{
+					{
+						Matches: []*ast.Glob{{Glob: "sources"}},
+					},
+				},
 			},
 			setupMockStatusChecker: nil,
 			setupMockSourcesChecker: func(m *MockSourcesCheckable) {
@@ -70,8 +78,8 @@ func TestIsTaskUpToDate(t *testing.T) {
 		{
 			name: "expect TRUE when status is up-to-date and sources are not defined",
 			task: &ast.Task{
-				Status:  []string{"status"},
-				Sources: nil,
+				Status:     []string{"status"},
+				Transforms: nil,
 			},
 			setupMockStatusChecker: func(m *MockStatusCheckable) {
 				m.EXPECT().IsUpToDate(mock.Anything, mock.Anything).Return(true, nil)
@@ -82,8 +90,12 @@ func TestIsTaskUpToDate(t *testing.T) {
 		{
 			name: "expect TRUE when status and sources are up-to-date",
 			task: &ast.Task{
-				Status:  []string{"status"},
-				Sources: []*ast.Glob{{Glob: "sources"}},
+				Status: []string{"status"},
+				Transforms: []*ast.Transform{
+					{
+						Matches: []*ast.Glob{{Glob: "sources"}},
+					},
+				},
 			},
 			setupMockStatusChecker: func(m *MockStatusCheckable) {
 				m.EXPECT().IsUpToDate(mock.Anything, mock.Anything).Return(true, nil)
@@ -96,8 +108,12 @@ func TestIsTaskUpToDate(t *testing.T) {
 		{
 			name: "expect FALSE when status is up-to-date, but sources are NOT up-to-date",
 			task: &ast.Task{
-				Status:  []string{"status"},
-				Sources: []*ast.Glob{{Glob: "sources"}},
+				Status: []string{"status"},
+				Transforms: []*ast.Transform{
+					{
+						Matches: []*ast.Glob{{Glob: "sources"}},
+					},
+				},
 			},
 			setupMockStatusChecker: func(m *MockStatusCheckable) {
 				m.EXPECT().IsUpToDate(mock.Anything, mock.Anything).Return(true, nil)
@@ -110,8 +126,8 @@ func TestIsTaskUpToDate(t *testing.T) {
 		{
 			name: "expect FALSE when status is NOT up-to-date and sources are not defined",
 			task: &ast.Task{
-				Status:  []string{"status"},
-				Sources: nil,
+				Status:     []string{"status"},
+				Transforms: nil,
 			},
 			setupMockStatusChecker: func(m *MockStatusCheckable) {
 				m.EXPECT().IsUpToDate(mock.Anything, mock.Anything).Return(false, nil)
@@ -122,8 +138,12 @@ func TestIsTaskUpToDate(t *testing.T) {
 		{
 			name: "expect FALSE when status is NOT up-to-date, but sources are up-to-date",
 			task: &ast.Task{
-				Status:  []string{"status"},
-				Sources: []*ast.Glob{{Glob: "sources"}},
+				Status: []string{"status"},
+				Transforms: []*ast.Transform{
+					{
+						Matches: []*ast.Glob{{Glob: "sources"}},
+					},
+				},
 			},
 			setupMockStatusChecker: func(m *MockStatusCheckable) {
 				m.EXPECT().IsUpToDate(mock.Anything, mock.Anything).Return(false, nil)
@@ -136,8 +156,12 @@ func TestIsTaskUpToDate(t *testing.T) {
 		{
 			name: "expect FALSE when status and sources are NOT up-to-date",
 			task: &ast.Task{
-				Status:  []string{"status"},
-				Sources: []*ast.Glob{{Glob: "sources"}},
+				Status: []string{"status"},
+				Transforms: []*ast.Transform{
+					{
+						Matches: []*ast.Glob{{Glob: "sources"}},
+					},
+				},
 			},
 			setupMockStatusChecker: func(m *MockStatusCheckable) {
 				m.EXPECT().IsUpToDate(mock.Anything, mock.Anything).Return(false, nil)

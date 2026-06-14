@@ -1,25 +1,25 @@
 version: '3'
-
 tasks:
   gen-foo:
     cmds:
       - touch foo.txt
-    sources:
-      - ./foo.txt
     status:
       - test 1 = 0
-
+    transforms:
+      - matches:
+          - ./foo.txt
   gen-bar:
     cmds:
       - touch bar.txt
-    sources:
-      - ./bar.txt
     status:
       - test 1 = 1
-
+    transforms:
+      - matches:
+          - ./bar.txt
   gen-silent-baz:
     silent: true
     cmds:
       - touch baz.txt
-    sources:
-      - ./baz.txt
+    transforms:
+      - matches:
+          - ./baz.txt

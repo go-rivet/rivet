@@ -1,17 +1,17 @@
 version: '3'
-
 tasks:
   build-checksum:
-    sources:
-      - ./source.txt
     status:
       - echo "foo"
       - echo "{{.CHECKSUM}}"
-
+    transforms:
+      - matches:
+          - ./source.txt
   build-ts:
     method: timestamp
-    sources:
-      - ./source.txt
     status:
       - echo '{{.TIMESTAMP.Unix}}'
       - echo '{{.TIMESTAMP}}'
+    transforms:
+      - matches:
+          - ./source.txt

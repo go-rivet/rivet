@@ -1,10 +1,8 @@
 version: "3"
-
 vars:
   OS_VAR: ["windows", "linux", "darwin"]
   ARCH_VAR: ["amd64", "arm64"]
   NOT_A_LIST: "not a list"
-
 tasks:
   # Loop over a list of values
   loop-explicit:
@@ -13,7 +11,6 @@ tasks:
         task: echo
         vars:
           TEXT: "{{.ITEM}}"
-
   loop-matrix:
     deps:
       - for:
@@ -23,7 +20,6 @@ tasks:
         task: echo
         vars:
           TEXT: "{{.ITEM.OS}}/{{.ITEM.ARCH}}"
-
   loop-matrix-ref:
     deps:
       - for:
@@ -35,7 +31,6 @@ tasks:
         task: echo
         vars:
           TEXT: "{{.ITEM.OS}}/{{.ITEM.ARCH}}"
-
   loop-matrix-ref-error:
     deps:
       - for:
@@ -47,49 +42,48 @@ tasks:
         task: echo
         vars:
           TEXT: "{{.ITEM.OS}}/{{.ITEM.ARCH}}"
-
   # Loop over the task's sources
   loop-sources:
-    sources:
-      - foo.txt
-      - bar.txt
     deps:
       - for: sources
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-
+    transforms:
+      - matches:
+          - foo.txt
+          - bar.txt
   # Loop over the task's sources when globbed
   loop-sources-glob:
-    sources:
-      - "*.txt"
     deps:
       - for: sources
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-
+    transforms:
+      - matches:
+          - "*.txt"
   # Loop over the task's generates
   loop-generates:
-    generates:
-      - foo.txt
-      - bar.txt
     deps:
       - for: generates
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-
+    transforms:
+      - yields:
+          - foo.txt
+          - bar.txt
   # Loop over the task's generates when globbed
   loop-generates-glob:
-    generates:
-      - "*.txt"
     deps:
       - for: generates
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-
+    transforms:
+      - yields:
+          - "*.txt"
   # Loop over the contents of a variable
   loop-vars:
     vars:
@@ -101,7 +95,6 @@ tasks:
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-
   # Loop over the output of a command (auto splits on " ")
   loop-vars-sh:
     vars:
@@ -113,7 +106,6 @@ tasks:
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-
   # Loop over another task
   loop-task:
     vars:
@@ -124,7 +116,6 @@ tasks:
         task: looped-task
         vars:
           FILE: "{{.ITEM}}"
-
   # Loop over another task with the variable named differently
   loop-task-as:
     vars:
@@ -136,7 +127,6 @@ tasks:
         task: looped-task
         vars:
           FILE: "{{.FILE}}"
-
   # Loop over different tasks using the variable
   loop-different-tasks:
     vars:
@@ -145,27 +135,21 @@ tasks:
       - for:
           var: FOO
         task: task-{{.ITEM}}
-
   looped-task:
     internal: true
     cmd: cat "{{.FILE}}"
-
   task-1:
     internal: true
     cmd: echo "1"
-
   task-2:
     internal: true
     cmd: echo "2"
-
   task-3:
     internal: true
     cmd: echo "3"
-
   echo:
     cmds:
       - echo "{{.TEXT}}"
-
   cat:
     cmds:
       - cat "{{.FILE}}"

@@ -83,8 +83,13 @@ func IsTaskUpToDate(
 		}
 	}
 
+	sources := []*ast.Glob{}
+	for _, tr := range t.Transforms {
+		sources = append(sources, tr.Matches...)
+	}
+
 	statusIsSet := len(t.Status) != 0
-	sourcesIsSet := len(t.Sources) != 0
+	sourcesIsSet := len(sources) != 0
 
 	// If status is set, check if it is up-to-date
 	if statusIsSet {

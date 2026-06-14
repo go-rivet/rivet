@@ -286,7 +286,11 @@ func (e *Executor) collectSources(calls []*Call) ([]string, error) {
 	var sources []string
 
 	err := e.traverse(calls, func(task *ast.Task) error {
-		files, err := fingerprint.Globs(task.Dir, task.Sources)
+		matches := []*ast.Glob{}
+		for _, t := range task.Transforms {
+			matches = append(matches, t.Matches...)
+		}
+		files, err := fingerprint.Globs(task.Dir, matches)
 		if err != nil {
 			return err
 		}

@@ -22,8 +22,7 @@ type Task struct {
 	Summary       string
 	Requires      *Requires
 	Aliases       []string
-	Sources       []*Glob
-	Generates     []*Glob
+	Transforms    []*Transform
 	Status        []string
 	Preconditions []*Precondition
 	Dir           string
@@ -126,8 +125,7 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 			Prompt        Prompt
 			Summary       string
 			Aliases       []string
-			Sources       []*Glob
-			Generates     []*Glob
+			Transforms    []*Transform
 			Status        []string
 			Preconditions []*Precondition
 			Dir           string
@@ -164,8 +162,7 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 		t.Prompt = task.Prompt
 		t.Summary = task.Summary
 		t.Aliases = task.Aliases
-		t.Sources = task.Sources
-		t.Generates = task.Generates
+		t.Transforms = task.Transforms
 		t.Status = task.Status
 		t.Preconditions = task.Preconditions
 		t.Dir = task.Dir
@@ -205,8 +202,7 @@ func (t *Task) DeepCopy() *Task {
 		Prompt:               t.Prompt,
 		Summary:              t.Summary,
 		Aliases:              deepcopy.Slice(t.Aliases),
-		Sources:              deepcopy.Slice(t.Sources),
-		Generates:            deepcopy.Slice(t.Generates),
+		Transforms:           deepcopy.Slice(t.Transforms),
 		Status:               deepcopy.Slice(t.Status),
 		Preconditions:        deepcopy.Slice(t.Preconditions),
 		Dir:                  t.Dir,

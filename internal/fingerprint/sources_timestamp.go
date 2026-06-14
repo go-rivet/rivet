@@ -24,19 +24,27 @@ func NewTimestampChecker(tempDir string, dry bool) *TimestampChecker {
 
 // IsUpToDate implements the Checker interface
 func (checker *TimestampChecker) IsUpToDate(t *ast.Task) (bool, error) {
-	if len(t.Sources) == 0 {
+
+	src := []*ast.Glob{}
+	gen := []*ast.Glob{}
+	for _, tr := range t.Transforms {
+		src = append(src, tr.Matches...)
+		gen = append(gen, tr.Yields...)
+	}
+
+	if len(src) == 0 {
 		return false, nil
 	}
 
-	sources, err := Globs(t.Dir, t.Sources)
+	sources, err := Globs(t.Dir, src)
 	if err != nil {
 		return false, nil
 	}
 
 	// If generates are declared, ensure they all exist. A missing generated
 	// file means the task must run regardless of timestamps.
-	if len(t.Generates) > 0 {
-		for _, g := range t.Generates {
+	if len(gen) > 0 {
+		for _, g := range gen {
 			// Exclusion patterns don't represent output files; skip them.
 			if g.Negate {
 				continue
@@ -54,7 +62,7 @@ func (checker *TimestampChecker) IsUpToDate(t *ast.Task) (bool, error) {
 		}
 	}
 
-	generates, err := Globs(t.Dir, t.Generates)
+	generates, err := Globs(t.Dir, gen)
 	if err != nil {
 		return false, nil
 	}
@@ -112,7 +120,12 @@ func (checker *TimestampChecker) Kind() string {
 
 // Value implements the Checker Interface
 func (checker *TimestampChecker) Value(t *ast.Task) (any, error) {
-	sources, err := Globs(t.Dir, t.Sources)
+	src := []*ast.Glob{}
+	for _, tr := range t.Transforms {
+		src = append(src, tr.Matches...)
+	}
+
+	sources, err := Globs(t.Dir, src)
 	if err != nil {
 		return time.Now(), err
 	}

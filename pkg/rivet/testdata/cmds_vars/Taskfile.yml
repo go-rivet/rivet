@@ -1,16 +1,16 @@
 version: '3'
-
 tasks:
   build-checksum:
-    sources:
-      - ./source.txt
     cmds:
       - echo "{{.CHECKSUM}}"
-
+    transforms:
+      - matches:
+          - ./source.txt
   build-ts:
     method: timestamp
-    sources:
-      - ./source.txt
     cmds:
       - echo '{{.TIMESTAMP.Unix}}'
       - echo '{{.TIMESTAMP}}'
+    transforms:
+      - matches:
+          - ./source.txt

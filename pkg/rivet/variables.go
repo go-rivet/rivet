@@ -45,8 +45,7 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 		Prompt:               templater.Replace(origTask.Prompt, cache),
 		Summary:              templater.Replace(origTask.Summary, cache),
 		Aliases:              origTask.Aliases,
-		Sources:              origTask.Sources,
-		Generates:            origTask.Generates,
+		Transforms:           origTask.Transforms,
 		Dir:                  origTask.Dir,
 		Set:                  origTask.Set,
 		Shopt:                origTask.Shopt,
@@ -110,8 +109,6 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 		Prompt:               templater.Replace(origTask.Prompt, cache),
 		Summary:              templater.Replace(origTask.Summary, cache),
 		Aliases:              origTask.Aliases,
-		Sources:              templater.ReplaceGlobs(origTask.Sources, cache),
-		Generates:            templater.ReplaceGlobs(origTask.Generates, cache),
 		Dir:                  templater.Replace(origTask.Dir, cache),
 		Set:                  origTask.Set,
 		Shopt:                origTask.Shopt,
@@ -144,25 +141,33 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 	if new.Prefix == "" {
 		new.Prefix = new.Task
 	}
-
-	if len(origTask.Sources) > 0 && origTask.Method != "none" {
-		var checker fingerprint.SourcesCheckable
-
-		if origTask.Method == "timestamp" {
-			checker = fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
-		} else {
-			checker = fingerprint.NewChecksumChecker(e.TempDir.Fingerprint, e.Dry)
+	if len(origTask.Transforms) > 0 {
+		new.Transforms = make([]*ast.Transform, 0, len(origTask.Transforms))
+		for _, transform := range origTask.Transforms {
+			var newTransform ast.Transform
+			newTransform.Matches = templater.ReplaceGlobs(transform.Matches, cache)
+			newTransform.Yields = templater.ReplaceGlobs(transform.Yields, cache)
+			new.Transforms = append(new.Transforms, &newTransform)
 		}
+		if origTask.Method != "none" {
+			var checker fingerprint.SourcesCheckable
 
-		value, err := checker.Value(&new)
-		if err != nil {
-			return nil, err
+			if origTask.Method == "timestamp" {
+				checker = fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
+			} else {
+				checker = fingerprint.NewChecksumChecker(e.TempDir.Fingerprint, e.Dry)
+			}
+
+			value, err := checker.Value(&new)
+			if err != nil {
+				return nil, err
+			}
+			vars.Set(strings.ToUpper(checker.Kind()), ast.Var{Live: value})
+
+			// Adding new variables, requires us to refresh the templaters
+			// cache of the the values manually
+			cache.ResetCache()
 		}
-		vars.Set(strings.ToUpper(checker.Kind()), ast.Var{Live: value})
-
-		// Adding new variables, requires us to refresh the templaters
-		// cache of the the values manually
-		cache.ResetCache()
 	}
 
 	if len(origTask.Cmds) > 0 {
@@ -172,7 +177,13 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 				continue
 			}
 			if cmd.For != nil {
-				list, keys, err := itemsFromFor(cmd.For, new.Dir, new.Sources, new.Generates, vars, origTask.Location, cache)
+				sources := []*ast.Glob{}
+				generates := []*ast.Glob{}
+				for _, t := range new.Transforms {
+					sources = append(sources, t.Matches...)
+					generates = append(generates, t.Yields...)
+				}
+				list, keys, err := itemsFromFor(cmd.For, new.Dir, sources, generates, vars, origTask.Location, cache)
 				if err != nil {
 					return nil, err
 				}
@@ -221,7 +232,13 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 				continue
 			}
 			if dep.For != nil {
-				list, keys, err := itemsFromFor(dep.For, new.Dir, new.Sources, new.Generates, vars, origTask.Location, cache)
+				sources := []*ast.Glob{}
+				generates := []*ast.Glob{}
+				for _, t := range new.Transforms {
+					sources = append(sources, t.Matches...)
+					generates = append(generates, t.Yields...)
+				}
+				list, keys, err := itemsFromFor(dep.For, new.Dir, sources, generates, vars, origTask.Location, cache)
 				if err != nil {
 					return nil, err
 				}

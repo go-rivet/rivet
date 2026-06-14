@@ -28,7 +28,14 @@ func NewChecksumChecker(tempDir string, dry bool) *ChecksumChecker {
 }
 
 func (checker *ChecksumChecker) IsUpToDate(t *ast.Task) (bool, error) {
-	if len(t.Sources) == 0 {
+	src := []*ast.Glob{}
+	gen := []*ast.Glob{}
+	for _, tr := range t.Transforms {
+		src = append(src, tr.Matches...)
+		gen = append(gen, tr.Yields...)
+	}
+
+	if len(src) == 0 {
 		return false, nil
 	}
 
@@ -49,9 +56,9 @@ func (checker *ChecksumChecker) IsUpToDate(t *ast.Task) (bool, error) {
 		}
 	}
 
-	if len(t.Generates) > 0 {
+	if len(gen) > 0 {
 		// For each specified 'generates' field, check whether the files actually exist
-		for _, g := range t.Generates {
+		for _, g := range gen {
 			// Exclusion patterns don't represent output files; skip them.
 			if g.Negate {
 				continue
@@ -77,7 +84,11 @@ func (checker *ChecksumChecker) Value(t *ast.Task) (any, error) {
 }
 
 func (checker *ChecksumChecker) OnError(t *ast.Task) error {
-	if len(t.Sources) == 0 {
+	src := []*ast.Glob{}
+	for _, tr := range t.Transforms {
+		src = append(src, tr.Matches...)
+	}
+	if len(src) == 0 {
 		return nil
 	}
 	return os.Remove(checker.checksumFilePath(t))
@@ -88,7 +99,11 @@ func (*ChecksumChecker) Kind() string {
 }
 
 func (c *ChecksumChecker) checksum(t *ast.Task) (string, error) {
-	sources, err := Globs(t.Dir, t.Sources)
+	src := []*ast.Glob{}
+	for _, tr := range t.Transforms {
+		src = append(src, tr.Matches...)
+	}
+	sources, err := Globs(t.Dir, src)
 	if err != nil {
 		return "", err
 	}

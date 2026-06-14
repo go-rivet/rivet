@@ -1,9 +1,7 @@
 version: '3'
-
 vars:
   BUILD_DIR:
     sh: pwd
-
 tasks:
   abs.txt:
     desc: generates dest file based on absolute paths
@@ -13,11 +11,11 @@ tasks:
     cmds:
       - cat src.txt > '{{.BUILD_DIR}}/abs.txt'
     method: timestamp
-    sources:
-      - src.txt
-    generates:
-      - "{{.BUILD_DIR}}/abs.txt"
-
+    transforms:
+      - matches:
+          - src.txt
+        yields:
+          - "{{.BUILD_DIR}}/abs.txt"
   rel.txt:
     desc: generates dest file based on relative paths
     deps:
@@ -26,11 +24,11 @@ tasks:
     cmds:
       - cat src.txt > '../rel.txt'
     method: timestamp
-    sources:
-      - src.txt
-    generates:
-      - "../rel.txt"
-
+    transforms:
+      - matches:
+          - src.txt
+        yields:
+          - "../rel.txt"
   sub/src.txt:
     desc: generate source file
     cmds:
@@ -39,14 +37,14 @@ tasks:
     method: timestamp
     status:
       - test -f sub/src.txt
-
   'my text file.txt':
     desc: generate file with spaces in the name
     deps: [sub/src.txt]
     cmds:
       - cat sub/src.txt > 'my text file.txt'
     method: timestamp
-    sources:
-      - sub/src.txt
-    generates:
-      - 'my text file.txt'
+    transforms:
+      - matches:
+          - sub/src.txt
+        yields:
+          - 'my text file.txt'
