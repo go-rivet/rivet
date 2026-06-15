@@ -147,8 +147,7 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 			newTransform.Yields = templater.ReplaceGlobs(transform.Yields, cache)
 			new.Transforms = append(new.Transforms, &newTransform)
 		}
-		var checker fingerprint.SourcesCheckable
-		checker = fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
+		var checker fingerprint.SourcesCheckable = fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
 
 		value, err := checker.Value(&new)
 		if err != nil {
