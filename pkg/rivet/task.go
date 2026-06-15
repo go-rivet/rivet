@@ -247,12 +247,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			}
 
 			// Get the fingerprinting method to use
-			method := e.Taskfile.Method
-			if t.Method != "" {
-				method = t.Method
-			}
 			upToDate, err := fingerprint.IsTaskUpToDate(ctx, t,
-				fingerprint.WithMethod(method),
 				fingerprint.WithTempDir(e.TempDir.Fingerprint),
 				fingerprint.WithDry(e.Dry),
 			)

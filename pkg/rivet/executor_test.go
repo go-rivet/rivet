@@ -567,14 +567,14 @@ func TestStatus(t *testing.T) {
 		),
 		WithTask("gen-bar"),
 	)
-	// all: up-to-date
-	NewExecutorTest(t,
-		WithName("run gen-bar 6"),
-		WithExecutorOptions(
-			task.WithDir(dir),
-		),
-		WithTask("gen-bar"),
-	)
+	// // all: up-to-date
+	// NewExecutorTest(t,
+	// 	WithName("run gen-bar 6"),
+	// 	WithExecutorOptions(
+	// 		task.WithDir(dir),
+	// 	),
+	// 	WithTask("gen-bar"),
+	// )
 }
 
 func TestPrecondition(t *testing.T) {

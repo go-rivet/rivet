@@ -154,12 +154,7 @@ func (e *Executor) ToEditorOutput(tasks []*ast.Task, noStatus bool, nested bool)
 			}
 
 			// Get the fingerprinting method to use
-			method := e.Taskfile.Method
-			if tasks[i].Method != "" {
-				method = tasks[i].Method
-			}
 			upToDate, err := fingerprint.IsTaskUpToDate(e.ctx, tasks[i],
-				fingerprint.WithMethod(method),
 				fingerprint.WithTempDir(e.TempDir.Fingerprint),
 				fingerprint.WithDry(e.Dry),
 			)

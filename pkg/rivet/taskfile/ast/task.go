@@ -32,7 +32,6 @@ type Task struct {
 	Dotenv        []string
 	Interactive   bool
 	Internal      bool
-	Method        string
 	Prefix        string `json:"-"`
 	IgnoreError   bool
 	Run           string
@@ -135,7 +134,6 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 			Dotenv        []string
 			Interactive   bool
 			Internal      bool
-			Method        string
 			Prefix        string
 			IgnoreError   bool `yaml:"ignore_error"`
 			Run           string
@@ -172,7 +170,6 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 		t.Dotenv = task.Dotenv
 		t.Interactive = task.Interactive
 		t.Internal = task.Internal
-		t.Method = task.Method
 		t.Prefix = task.Prefix
 		t.IgnoreError = task.IgnoreError
 		t.Run = task.Run
@@ -212,7 +209,6 @@ func (t *Task) DeepCopy() *Task {
 		Dotenv:               deepcopy.Slice(t.Dotenv),
 		Interactive:          t.Interactive,
 		Internal:             t.Internal,
-		Method:               t.Method,
 		Prefix:               t.Prefix,
 		IgnoreError:          t.IgnoreError,
 		Run:                  t.Run,

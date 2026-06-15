@@ -221,9 +221,6 @@ func (e *Executor) setupCompiler() error {
 }
 
 func (e *Executor) setupDefaults() {
-	if e.Taskfile.Method == "" {
-		e.Taskfile.Method = "checksum"
-	}
 	if e.Taskfile.Run == "" {
 		e.Taskfile.Run = "always"
 	}

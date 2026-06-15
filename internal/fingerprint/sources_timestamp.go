@@ -3,6 +3,7 @@ package fingerprint
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
@@ -183,4 +184,11 @@ func (*TimestampChecker) OnError(t *ast.Task) error {
 
 func (checker *TimestampChecker) timestampFilePath(t *ast.Task) string {
 	return filepath.Join(checker.tempDir, "timestamp", normalizeFilename(t.Task))
+}
+
+var checksumFilenameRegexp = regexp.MustCompile("[^A-z0-9]")
+
+// replaces invalid characters on filenames with "-"
+func normalizeFilename(f string) string {
+	return checksumFilenameRegexp.ReplaceAllString(f, "-")
 }

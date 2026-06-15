@@ -53,7 +53,6 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 		Dotenv:               origTask.Dotenv,
 		Interactive:          origTask.Interactive,
 		Internal:             origTask.Internal,
-		Method:               origTask.Method,
 		Prefix:               origTask.Prefix,
 		IgnoreError:          origTask.IgnoreError,
 		Run:                  origTask.Run,
@@ -116,7 +115,6 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 		Dotenv:               templater.Replace(origTask.Dotenv, cache),
 		Interactive:          origTask.Interactive,
 		Internal:             origTask.Internal,
-		Method:               templater.Replace(origTask.Method, cache),
 		Prefix:               templater.Replace(origTask.Prefix, cache),
 		IgnoreError:          origTask.IgnoreError,
 		Run:                  templater.Replace(origTask.Run, cache),
@@ -149,25 +147,19 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 			newTransform.Yields = templater.ReplaceGlobs(transform.Yields, cache)
 			new.Transforms = append(new.Transforms, &newTransform)
 		}
-		if origTask.Method != "none" {
-			var checker fingerprint.SourcesCheckable
+		var checker fingerprint.SourcesCheckable
+		checker = fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
 
-			if origTask.Method == "timestamp" {
-				checker = fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
-			} else {
-				checker = fingerprint.NewChecksumChecker(e.TempDir.Fingerprint, e.Dry)
-			}
-
-			value, err := checker.Value(&new)
-			if err != nil {
-				return nil, err
-			}
-			vars.Set(strings.ToUpper(checker.Kind()), ast.Var{Live: value})
-
-			// Adding new variables, requires us to refresh the templaters
-			// cache of the the values manually
-			cache.ResetCache()
+		value, err := checker.Value(&new)
+		if err != nil {
+			return nil, err
 		}
+		vars.Set(strings.ToUpper(checker.Kind()), ast.Var{Live: value})
+
+		// Adding new variables, requires us to refresh the templaters
+		// cache of the the values manually
+		cache.ResetCache()
+
 	}
 
 	if len(origTask.Cmds) > 0 {
