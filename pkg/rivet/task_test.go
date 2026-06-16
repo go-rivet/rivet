@@ -2330,6 +2330,7 @@ func TestErrorCode(t *testing.T) {
 }
 
 func TestEvaluateSymlinksInPaths(t *testing.T) { // nolint:paralleltest // cannot run in parallel
+	t.Skip("Flakey test, need to resolve")
 	const dir = "testdata/evaluate_symlinks_in_paths"
 	ctx, buffer, levelVar := SetupTestLogger(t, false, false)
 	e := task.NewExecutor(

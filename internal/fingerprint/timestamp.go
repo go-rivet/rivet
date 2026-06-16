@@ -189,8 +189,6 @@ func (checker *TimestampChecker) timestampFilePath(t *ast.Task) string {
 	return filepath.Join(checker.tempDir, "timestamp", normalizeFilename(t.Task))
 }
 
-// 3. Optimize normalizeFilename: Read-only scan checks characters directly.
-// Allocates memory ONLY if the string contains invalid characters that must be rewritten.
 func normalizeFilename(f string) string {
 	if f == "" {
 		return ""
@@ -200,7 +198,8 @@ func normalizeFilename(f string) string {
 	needsChange := false
 	for i := 0; i < len(f); i++ {
 		c := f[i]
-		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+		// Linter Optimized: Cleaner, un-nested character boundary check
+		if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (c < '0' || c > '9') {
 			needsChange = true
 			break
 		}
@@ -214,7 +213,8 @@ func normalizeFilename(f string) string {
 	// Slow Path: Allocate a mutable segment only when invalid characters are confirmed.
 	b := []byte(f)
 	for i, c := range b {
-		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+		// Linter Optimized: Matching logic for the actual array modification rewrite
+		if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (c < '0' || c > '9') {
 			b[i] = '-'
 		}
 	}

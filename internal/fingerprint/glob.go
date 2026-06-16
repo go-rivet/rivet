@@ -60,7 +60,6 @@ func GlobsWithInfo(ctx context.Context, dir string, globs []*ast.Glob, skipSort 
 	return collectKeysAndMetadata(resultMap, skipSort)
 }
 
-// Deprecated: Kept for legacy compatibility if other files still call Globs()
 func Globs(dir string, globs []*ast.Glob) ([]string, error) {
 	paths, _, err := GlobsWithInfo(context.Background(), dir, globs, false)
 	return paths, err
