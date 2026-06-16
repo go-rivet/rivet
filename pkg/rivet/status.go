@@ -36,9 +36,6 @@ func (e *Executor) Status(ctx context.Context, calls ...*Call) error {
 }
 
 func (e *Executor) statusOnError(t *ast.Task) error {
-	checker, err := fingerprint.NewSourcesChecker("", e.TempDir.Fingerprint, e.Dry)
-	if err != nil {
-		return err
-	}
+	checker := fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
 	return checker.OnError(t)
 }

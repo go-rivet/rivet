@@ -69,10 +69,7 @@ func IsTaskUpToDate(
 
 	// If no sources checker was given, set up the default one
 	if config.sourcesChecker == nil {
-		config.sourcesChecker, err = NewSourcesChecker("", config.tempDir, config.dry)
-		if err != nil {
-			return false, err
-		}
+		config.sourcesChecker = NewTimestampChecker(config.tempDir, config.dry)
 	}
 
 	sources := []*ast.Glob{}
