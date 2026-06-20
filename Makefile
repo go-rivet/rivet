@@ -73,10 +73,14 @@ test:
 #	gotestsum --format short-verbose -- -failfast -count=1 -run="$(TEST)" ./...
 	gotestsum --format short-verbose -- -count=1 -run="$(TEST)" ./...
 
-## test-all: Run unit tests and other integration/e2e tests
+## test-all: Run unit tests and other integration tests
 test-all:
 	@echo "Running tests..."
 	go test -v -race ./... -tags 'signals watch'
+
+## test-e2e: Run E2E tests (from ../rivet-e2e/catalog)
+test-e2e:
+	re2e -d ../rivet-e2e/catalog
 
 ## lint: Lint (and fix) the code base
 lint:
