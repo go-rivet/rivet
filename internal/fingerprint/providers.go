@@ -195,11 +195,11 @@ func newSourceReadDirProvider(ctx context.Context, cancel context.CancelFunc, mu
 			if negate {
 				return entries, nil
 			}
-			if len(entries) == 0 {
-				// This should really be an error condition, but it fails lots of tests.
-				//cancel()
-				//return nil, ErrNoSourcesMatched
-			}
+			//if len(entries) == 0 {
+			// This should really be an error condition, but it fails lots of tests.
+			//cancel()
+			//return nil, ErrNoSourcesMatched
+			//}
 
 			// Determine if any entires are out of date.
 			mu.Lock()
