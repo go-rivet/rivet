@@ -60,7 +60,9 @@ func main() {
 
 	// Logging.
 	vl := VerboseLevel(0)
-	vl.Set(config.Verbose)
+	if err := vl.Set(config.Verbose); err != nil {
+		exit(err)
+	}
 	logLevelVar := &slog.LevelVar{}
 	logLevelVar.Set(LogLevel(vl))
 	rlog.Init(rlog.RlogOptions{

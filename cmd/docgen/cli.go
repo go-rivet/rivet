@@ -20,7 +20,7 @@ func genCliDoc() {
 		fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	oldStdout := os.Stdout
 	os.Stdout = f
 	defer func() { os.Stdout = oldStdout }()
