@@ -398,10 +398,10 @@ type silentOption struct {
 func (o *silentOption) ApplyToExecutor(e *Executor) {
 	if e.LevelVar == nil {
 		e.LevelVar = new(slog.LevelVar)
-		e.LevelVar.Set(slog.LevelInfo) // int(flags.LevelNone)
+		e.LevelVar.Set(slog.LevelInfo)
 	}
 	if o.silent {
-		e.LevelVar.Set(slog.LevelWarn) // int(flags.LevelNone)
+		e.LevelVar.Set(slog.LevelWarn)
 	}
 }
 

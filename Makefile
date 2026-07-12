@@ -87,10 +87,11 @@ lint:
 	@echo "Running golangci-lint..."
 	golangci-lint run --fix ./...
 
+## generate: Generate documentation (AST based)
 generate:
 	go generate ./...
 
-## generate: Generate golden fixture files
+## generate-fixtures: Generate golden fixture files
 generate-fixtures:
 	@echo "==> Cleaning old golden fixtures..."
 	find ./testdata -name '*.golden' -delete 2>/dev/null || true

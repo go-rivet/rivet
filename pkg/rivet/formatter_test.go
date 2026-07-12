@@ -8,7 +8,6 @@ import (
 	"github.com/sebdah/goldie/v2"
 	"github.com/stretchr/testify/require"
 
-	"github.com/go-rivet/rivet/internal/flags"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 	"github.com/go-rivet/rivet/pkg/rlog"
 
@@ -120,7 +119,7 @@ func (tt *FormatterTest) run(t *testing.T) {
 		)
 
 		// Setup logging.
-		logOpts := &slog.HandlerOptions{Level: flags.LogLevel(flags.VerboseLevel(1))}
+		logOpts := &slog.HandlerOptions{Level: slog.LevelInfo}
 		logHandler := rlog.NewCliHandler(&buffer, &buffer, false, logOpts)
 		baseCtx := t.Context()
 		ctx := rlog.WithContext(baseCtx, logHandler)

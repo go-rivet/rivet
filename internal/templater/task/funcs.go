@@ -44,6 +44,7 @@ var TaskFuncs = template.FuncMap{
 	"joinPath":  filepath.Join,
 	"relPath":   filepath.Rel,
 	"absPath":   filepath.Abs,
+	"patsubst":  patsubst,
 
 	// --- Shell Tokenization ---
 	"shellQuote": shellQuote,
@@ -151,4 +152,17 @@ func mustToYaml(v any) (string, error) {
 		return "", err
 	}
 	return string(output), nil
+}
+
+func patsubst(oldExt, newExt string, paths []string) []string {
+	// {{ patsubst ".c" ".o" .srcs | join " " }}
+	result := make([]string, len(paths))
+	for i, path := range paths {
+		if strings.HasSuffix(path, oldExt) {
+			result[i] = strings.TrimSuffix(path, oldExt) + newExt
+		} else {
+			result[i] = path
+		}
+	}
+	return result
 }

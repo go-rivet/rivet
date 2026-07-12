@@ -1,4 +1,4 @@
-//go:generate go run ../../cmd/docgen/main.go
+//go:generate go run ../../cmd/docgen templater
 package templater
 
 import (
