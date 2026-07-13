@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	mrand "math/rand/v2"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -105,25 +106,11 @@ func joinEnv(elem ...string) string {
 	return strings.Join(elem, string(os.PathListSeparator))
 }
 
-// Fixed joinUrl to safely preserve web protocol scheme identifiers (e.g., https://)
-func joinUrl(elem ...string) string {
+func joinUrl(elem ...string) (string, error) {
 	if len(elem) == 0 {
-		return ""
+		return "", nil
 	}
-	var paths []string
-	for i, e := range elem {
-		trimmed := e
-		if i > 0 {
-			trimmed = strings.TrimLeft(trimmed, "/")
-		}
-		if i < len(elem)-1 {
-			trimmed = strings.TrimRight(trimmed, "/")
-		}
-		if trimmed != "" {
-			paths = append(paths, trimmed)
-		}
-	}
-	return strings.Join(paths, "/")
+	return url.JoinPath(elem[0], elem[1:]...)
 }
 
 // Fixed map key capacity estimation algorithm
