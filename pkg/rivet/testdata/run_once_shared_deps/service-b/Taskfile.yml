@@ -9,6 +9,6 @@ tasks:
     deps: ['library:build']
     cmds:
       - echo "build b"
-    transforms:
-      - matches:
-          - src/**/*
+    transform:
+      matches:
+        - src/**/*

@@ -79,8 +79,14 @@ test-all:
 	go test -v -race ./... -tags 'signals watch'
 
 ## test-e2e: Run E2E tests (from ../rivet-e2e/catalog)
+
+ifdef TEST 
+TESTSCRIPT_E2E_FILES := ../rivet-e2e/catalog/$(TEST)
+else 
+TESTSCRIPT_E2E_FILES := ../rivet-e2e/catalog
+endif
 test-e2e:
-	re2e -d ../rivet-e2e/catalog
+	re2e -d $(TESTSCRIPT_E2E_FILES)
 
 ## lint: Lint (and fix) the code base
 lint:
@@ -141,6 +147,7 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make test TEST=TestFoo"
+	@echo "  make test-e2e TEST=task/transform/task.transform.patsubst.txtar"
 
 
 

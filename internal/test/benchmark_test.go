@@ -197,17 +197,15 @@ func createIssue2853Fixture(tb testing.TB, dir string, fileCount int, fileSize i
 tasks:
 
   timestamp-yaml:
-    method: timestamp
-    transforms:
-      - matches:
-          - path/to/folder/**/*.yaml
-        yields:
-          - out/timestamp.txt
+    transform:
+      matches:
+		- path/to/folder/**/*.yaml
+	  yields:
+		- out/timestamp.txt
     cmds:
       - printf ok > out/timestamp.txt
 
   uncached-yaml:
-    method: none
     cmds:
       - printf ok > out/uncached.txt
 `

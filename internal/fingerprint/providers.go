@@ -18,20 +18,27 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// Functional Closure to encapsulate state into the mcdancc/sh ReadDir2 interface (which is itself stateless). This
-// makes it possible to directly evaluate state (maxTime, outOfDate) without needing to accumulate intermediate objects.
-
 var ErrNoSourcesMatched = errors.New("fingerprint: source glob pattern matched zero files")
 
-// readDirProvider defines a higher-order interceptor factory type.
-type readDirProvider func(negate bool) func(string, func(string) ([]fs.DirEntry, error)) ([]fs.DirEntry, error)
+// dirReadResult holds the fs.DirEntry values that a single task-scoped glob pattern
+// matched. All differentiating logic (out-of-date checks, max-time tracking, etc.)
+// is applied afterward by inspecting the collected results.
+type dirReadResult struct {
+	negate  bool
+	entries []fs.DirEntry
+}
 
-// walkDirWithProvider processes an array of task-scoped patterns concurrently.
-func walkDirWithProvider(ctx context.Context, dir string, globs []*ast.Glob, provider readDirProvider) error {
+// walkDirWithProvider evaluates an array of task-scoped patterns concurrently. Each
+// pattern is expanded/glob-matched via mvdan.cc/sh/expand, and the resulting matched
+// files are resolved into fs.DirEntry values for the caller to evaluate afterward.
+func walkDirWithProvider(ctx context.Context, dir string, globs []*ast.Glob) ([]dirReadResult, error) {
 	if len(globs) == 0 {
-		return nil
+		return nil, nil
 	}
 	g, ctx := errgroup.WithContext(ctx)
+
+	var mu sync.Mutex
+	var results []dirReadResult
 
 	for _, gPattern := range globs {
 		g.Go(func() error {
@@ -50,22 +57,26 @@ func walkDirWithProvider(ctx context.Context, dir string, globs []*ast.Glob, pro
 				words = append(words, w)
 			}
 
-			// Process each pattern.
+			var entries []fs.DirEntry
 			if pattern.HasMeta(gPattern.Glob, 0) {
-				// Glob pattern, call the interceptor indirectly (via ReadDir2).
+				// Glob pattern: expand.Fields applies the actual shell glob matching
+				// and returns the matched paths, which we resolve into DirEntry values.
 				cfg := &expand.Config{
 					Env: expand.FuncEnviron(os.Getenv),
 					ReadDir2: func(dirPath string) ([]fs.DirEntry, error) {
-						return provider(gPattern.Negate)(dirPath, os.ReadDir)
+						return os.ReadDir(dirPath)
 					},
 					GlobStar: true,
 					NullGlob: true,
 				}
-				_, err := expand.Fields(cfg, words...)
-				if err != nil && !errors.Is(err, context.Canceled) {
+				matchedPaths, err := expand.Fields(cfg, words...)
+				if err != nil {
 					return err
 				}
-				return nil
+				entries, err = statMatchedPaths(matchedPaths)
+				if err != nil {
+					return err
+				}
 			} else {
 				// Non-glob pattern (i.e. single file/directory).
 				var expandedWords []string
@@ -82,176 +93,115 @@ func walkDirWithProvider(ctx context.Context, dir string, globs []*ast.Glob, pro
 				expandedPath := strings.Join(expandedWords, " ")
 
 				cleanPath := filepath.Clean(expandedPath)
-				parentDir := filepath.Dir(cleanPath)
 				fi, err := os.Stat(cleanPath)
 				if err != nil && !errors.Is(err, fs.ErrNotExist) {
 					return err
 				}
-
-				// Call the interceptor directly with a mock/synthetic ReadDir.
-				interceptor := provider(gPattern.Negate)
-				mockReadDir := func(dirPath string) ([]fs.DirEntry, error) {
-					if errors.Is(err, fs.ErrNotExist) {
-						return []fs.DirEntry{}, nil
-					}
-					return []fs.DirEntry{fs.FileInfoToDirEntry(fi)}, nil
+				if err == nil {
+					entries = []fs.DirEntry{fs.FileInfoToDirEntry(fi)}
 				}
-				_, err = interceptor(parentDir, mockReadDir)
-				if err != nil && !errors.Is(err, context.Canceled) {
-					return err
-				}
-				return nil
 			}
+
+			mu.Lock()
+			results = append(results, dirReadResult{negate: gPattern.Negate, entries: entries})
+			mu.Unlock()
+			return nil
 		})
 	}
 
-	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
-		return err
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
-	return nil
+	return results, nil
 }
 
-// newGenerateReadDirProvider initializes an output tracker interceptor.
-func newGenerateReadDirProvider(ctx context.Context, cancel context.CancelFunc, mu *sync.Mutex, maxTime *time.Time, outOfDate *bool) readDirProvider {
-	return func(negate bool) func(string, func(string) ([]fs.DirEntry, error)) ([]fs.DirEntry, error) {
-		return func(dirPath string, readDir func(string) ([]fs.DirEntry, error)) ([]fs.DirEntry, error) {
-			// Check if generates item exists.
-			entries, err := readDir(dirPath)
-			if err != nil {
-				if errors.Is(err, fs.ErrNotExist) {
-					mu.Lock()
-					*outOfDate = true
-					mu.Unlock()
-					cancel()
-				}
-				return nil, err
+// statMatchedPaths resolves the glob-matched paths returned by expand.Fields into
+// their corresponding fs.DirEntry values.
+func statMatchedPaths(paths []string) ([]fs.DirEntry, error) {
+	entries := make([]fs.DirEntry, 0, len(paths))
+	for _, path := range paths {
+		fi, err := os.Lstat(path)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
 			}
-			if negate {
-				return entries, nil
-			}
-
-			// Check that there is a generates item (i.e. something matched).
-			if len(entries) == 0 {
-				mu.Lock()
-				*outOfDate = true
-				mu.Unlock()
-				cancel()
-				return entries, context.Canceled
-			}
-
-			// Determine if any entires are out of date.
-			var localMax time.Time
-			hasFiles := false
-			for _, entry := range entries {
-				if entry.IsDir() {
-					continue
-				}
-				if info, err := entry.Info(); err == nil {
-					hasFiles = true
-					modTime := info.ModTime()
-					if modTime.After(localMax) {
-						localMax = modTime
-					}
-				} else {
-					mu.Lock()
-					*outOfDate = true
-					mu.Unlock()
-					cancel()
-					return nil, err
-				}
-			}
-			if !hasFiles {
-				// No files (in this dir) matched.
-				mu.Lock()
-				*outOfDate = true
-				mu.Unlock()
-				cancel()
-				return entries, context.Canceled
-			}
-
-			// Update the maxtime (based on this dir).
-			mu.Lock()
-			if localMax.After(*maxTime) {
-				*maxTime = localMax
-			}
-			mu.Unlock()
-
-			return entries, nil
+			return nil, err
 		}
+		entries = append(entries, fs.FileInfoToDirEntry(fi))
 	}
+	return entries, nil
 }
 
-// newSourceReadDirProvider initializes an source tracker interceptor.
-func newSourceReadDirProvider(ctx context.Context, cancel context.CancelFunc, mu *sync.Mutex, generateMaxTime *time.Time, outOfDate *bool) readDirProvider {
-	return func(negate bool) func(string, func(string) ([]fs.DirEntry, error)) ([]fs.DirEntry, error) {
-		return func(dirPath string, readDir func(string) ([]fs.DirEntry, error)) ([]fs.DirEntry, error) {
-			if err := ctx.Err(); err != nil {
-				return nil, err
+// evaluateGenerateResults determines the max modification time across generated
+// outputs and whether they are out of date (missing, or a matched dir has no files).
+func evaluateGenerateResults(results []dirReadResult) (maxTime time.Time, outOfDate bool, err error) {
+	for _, r := range results {
+		if r.negate {
+			continue
+		}
+		if len(r.entries) == 0 {
+			return maxTime, true, nil
+		}
+		hasFiles := false
+		for _, entry := range r.entries {
+			if entry.IsDir() {
+				continue
 			}
-			entries, err := readDir(dirPath)
+			info, err := entry.Info()
 			if err != nil {
-				return nil, err
+				return maxTime, true, err
 			}
-			if negate {
-				return entries, nil
+			hasFiles = true
+			if modTime := info.ModTime(); modTime.After(maxTime) {
+				maxTime = modTime
 			}
-			//if len(entries) == 0 {
-			// This should really be an error condition, but it fails lots of tests.
-			//cancel()
-			//return nil, ErrNoSourcesMatched
-			//}
-
-			// Determine if any entires are out of date.
-			mu.Lock()
-			threshold := *generateMaxTime
-			mu.Unlock()
-			for _, entry := range entries {
-				if entry.IsDir() {
-					continue
-				}
-				if info, err := entry.Info(); err == nil {
-					modTime := info.ModTime()
-					if modTime.After(threshold) {
-						mu.Lock()
-						*outOfDate = true
-						mu.Unlock()
-						cancel()
-						return nil, context.Canceled
-					}
-				}
-			}
-			return entries, nil
+		}
+		if !hasFiles {
+			return maxTime, true, nil
 		}
 	}
+	return maxTime, false, nil
 }
 
-// newMaxTimeReadDirProvider initializes a metadata tracking interceptor.
-func newMaxTimeReadDirProvider(mu *sync.Mutex, maxTime *time.Time) readDirProvider {
-	return func(negate bool) func(string, func(string) ([]fs.DirEntry, error)) ([]fs.DirEntry, error) {
-		return func(dirPath string, readDir func(string) ([]fs.DirEntry, error)) ([]fs.DirEntry, error) {
-			entries, err := readDir(dirPath)
+// evaluateSourceResults reports whether any collected source file is newer than threshold.
+func evaluateSourceResults(results []dirReadResult, threshold time.Time) (outOfDate bool, err error) {
+	for _, r := range results {
+		if r.negate {
+			continue
+		}
+		for _, entry := range r.entries {
+			if entry.IsDir() {
+				continue
+			}
+			info, err := entry.Info()
 			if err != nil {
-				return nil, err
+				return false, err
 			}
-			if negate {
-				return entries, nil
+			if info.ModTime().After(threshold) {
+				return true, nil
 			}
-
-			// Determine the latest modification time.
-			for _, entry := range entries {
-				if entry.IsDir() {
-					continue
-				}
-				if info, err := entry.Info(); err == nil {
-					modTime := info.ModTime()
-					mu.Lock()
-					if modTime.After(*maxTime) {
-						*maxTime = modTime
-					}
-					mu.Unlock()
-				}
-			}
-			return entries, nil
 		}
 	}
+	return false, nil
+}
+
+// evaluateMaxTimeResults determines the latest modification time across all collected entries.
+func evaluateMaxTimeResults(results []dirReadResult) time.Time {
+	var maxTime time.Time
+	for _, r := range results {
+		if r.negate {
+			continue
+		}
+		for _, entry := range r.entries {
+			if entry.IsDir() {
+				continue
+			}
+			if info, err := entry.Info(); err == nil {
+				if modTime := info.ModTime(); modTime.After(maxTime) {
+					maxTime = modTime
+				}
+			}
+		}
+	}
+	return maxTime
 }

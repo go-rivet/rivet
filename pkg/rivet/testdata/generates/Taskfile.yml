@@ -10,12 +10,11 @@ tasks:
     dir: sub
     cmds:
       - cat src.txt > '{{.BUILD_DIR}}/abs.txt'
-    method: timestamp
-    transforms:
-      - matches:
-          - src.txt
-        yields:
-          - "{{.BUILD_DIR}}/abs.txt"
+    transform:
+      matches:
+        - src.txt
+      yields:
+        - "{{.BUILD_DIR}}/abs.txt"
   rel.txt:
     desc: generates dest file based on relative paths
     deps:
@@ -23,18 +22,16 @@ tasks:
     dir: sub
     cmds:
       - cat src.txt > '../rel.txt'
-    method: timestamp
-    transforms:
-      - matches:
-          - src.txt
-        yields:
-          - "../rel.txt"
+    transform:
+      matches:
+        - src.txt
+      yields:
+        - "../rel.txt"
   sub/src.txt:
     desc: generate source file
     cmds:
       - mkdir -p sub
       - echo "hello world" > sub/src.txt
-    method: timestamp
     status:
       - test -f sub/src.txt
   'my text file.txt':
@@ -42,9 +39,8 @@ tasks:
     deps: [sub/src.txt]
     cmds:
       - cat sub/src.txt > 'my text file.txt'
-    method: timestamp
-    transforms:
-      - matches:
-          - sub/src.txt
-        yields:
-          - 'my text file.txt'
+    transform:
+      matches:
+        - sub/src.txt
+      yields:
+        - 'my text file.txt'

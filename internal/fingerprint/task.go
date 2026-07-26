@@ -72,13 +72,15 @@ func IsTaskUpToDate(
 		config.sourcesChecker = NewTimestampChecker(config.tempDir, config.dry)
 	}
 
-	sources := []*ast.Glob{}
-	for _, tr := range t.Transforms {
-		sources = append(sources, tr.Matches...)
+	var matches []*ast.Glob
+	if t.Transform != nil {
+		matches = t.Transform.Matches
+		if matchGlob, _ := t.Transform.SubstToGlob(); matchGlob != nil {
+			matches = append(matches, matchGlob)
+		}
 	}
-
 	statusIsSet := len(t.Status) != 0
-	sourcesIsSet := len(sources) != 0
+	sourcesIsSet := len(matches) != 0
 
 	// If status is set, check if it is up-to-date
 	if statusIsSet {

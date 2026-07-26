@@ -2,9 +2,9 @@ version: '3'
 
 tasks:
   default:
-    transforms:
-      - matches:
-          - src/**/*
+    transform:
+      matches:
+        - src/**/*
     cmds:
       - echo "some job"
 

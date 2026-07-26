@@ -4,6 +4,6 @@ tasks:
     run: once
     cmds:
       - echo "build library"
-    transforms:
-      - matches:
-          - src/**/*
+    transform:
+      matches:
+        - src/**/*

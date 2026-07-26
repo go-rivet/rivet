@@ -286,9 +286,9 @@ func (e *Executor) collectSources(calls []*Call) ([]string, error) {
 	var sources []string
 
 	err := e.traverse(calls, func(task *ast.Task) error {
-		matches := []*ast.Glob{}
-		for _, t := range task.Transforms {
-			matches = append(matches, t.Matches...)
+		var matches []*ast.Glob
+		if task.Transform != nil {
+			matches = task.Transform.Matches
 		}
 		files, err := fingerprint.Globs(task.Dir, matches)
 		if err != nil {

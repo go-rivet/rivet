@@ -45,45 +45,45 @@ tasks:
   # Loop over the task's sources
   loop-sources:
     deps:
-      - for: sources
+      - for: matches
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-    transforms:
-      - matches:
-          - foo.txt
-          - bar.txt
+    transform:
+      matches:
+        - foo.txt
+        - bar.txt
   # Loop over the task's sources when globbed
   loop-sources-glob:
     deps:
-      - for: sources
+      - for: matches
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-    transforms:
-      - matches:
-          - "*.txt"
+    transform:
+      matches:
+        - "*.txt"
   # Loop over the task's generates
   loop-generates:
     deps:
-      - for: generates
+      - for: yields
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-    transforms:
-      - yields:
-          - foo.txt
-          - bar.txt
+    transform:
+      yields:
+        - foo.txt
+        - bar.txt
   # Loop over the task's generates when globbed
   loop-generates-glob:
     deps:
-      - for: generates
+      - for: yields
         task: cat
         vars:
           FILE: "{{.ITEM}}"
-    transforms:
-      - yields:
-          - "*.txt"
+    transform:
+      yields:
+        - "*.txt"
   # Loop over the contents of a variable
   loop-vars:
     vars:

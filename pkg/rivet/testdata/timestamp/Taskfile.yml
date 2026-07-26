@@ -3,9 +3,8 @@ tasks:
   build:
     cmds:
       - cp ./source.txt ./generated.txt
-    method: timestamp
-    transforms:
-      - matches:
-          - ./source.txt
-        yields:
-          - ./generated.txt
+    transform:
+      matches:
+        - ./source.txt
+      yields:
+        - ./generated.txt

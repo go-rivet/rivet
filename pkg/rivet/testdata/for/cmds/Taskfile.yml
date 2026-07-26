@@ -37,37 +37,37 @@ tasks:
   # Loop over the task's sources
   loop-sources:
     cmds:
-      - for: sources
+      - for: matches
         cmd: cat "{{.ITEM}}"
-    transforms:
-      - matches:
-          - foo.txt
-          - bar.txt
+    transform:
+      matches:
+        - foo.txt
+        - bar.txt
   # Loop over the task's sources when globbed
   loop-sources-glob:
     cmds:
-      - for: sources
+      - for: matches
         cmd: cat "{{.ITEM}}"
-    transforms:
-      - matches:
-          - "*.txt"
+    transform:
+      matches:
+        - "*.txt"
   # Loop over the task's generates
   loop-generates:
     cmds:
-      - for: generates
+      - for: yields
         cmd: cat "{{.ITEM}}"
-    transforms:
-      - yields:
-          - foo.txt
-          - bar.txt
+    transform:
+      yields:
+        - foo.txt
+        - bar.txt
   # Loop over the task's generates when globbed
   loop-generates-glob:
     cmds:
-      - for: generates
+      - for: yields
         cmd: cat "{{.ITEM}}"
-    transforms:
-      - yields:
-          - "*.txt"
+    transform:
+      yields:
+        - "*.txt"
   # Loop over the contents of a variable
   loop-vars:
     vars:

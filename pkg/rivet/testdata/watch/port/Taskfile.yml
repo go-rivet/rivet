@@ -8,9 +8,9 @@ tasks:
       - echo "server started"
       - socat TCP-LISTEN:{{.PORT}},fork,reuseaddr - || [ $? -eq 130 ]
       - defer: kill $(lsof -t -i:{{.PORT}}) && while lsof -i :{{.PORT}} > /dev/null; do sleep 1; done
-    transforms:
-      - matches:
-          - 'foo.txt'
+    transform:
+      matches:
+        - 'foo.txt'
   client:
     cmds:
       - until lsof -Pi :{{.PORT}} -sTCP:LISTEN | tail -n +2; do sleep 0.5; done

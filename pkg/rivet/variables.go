@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/go-rivet/rivet/internal/execext"
@@ -45,7 +46,7 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 		Prompt:               templater.Replace(origTask.Prompt, cache),
 		Summary:              templater.Replace(origTask.Summary, cache),
 		Aliases:              origTask.Aliases,
-		Transforms:           origTask.Transforms,
+		Transform:            origTask.Transform,
 		Dir:                  origTask.Dir,
 		Set:                  origTask.Set,
 		Shopt:                origTask.Shopt,
@@ -139,13 +140,11 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 	if new.Prefix == "" {
 		new.Prefix = new.Task
 	}
-	if len(origTask.Transforms) > 0 {
-		new.Transforms = make([]*ast.Transform, 0, len(origTask.Transforms))
-		for _, transform := range origTask.Transforms {
-			var newTransform ast.Transform
-			newTransform.Matches = templater.ReplaceGlobs(transform.Matches, cache)
-			newTransform.Yields = templater.ReplaceGlobs(transform.Yields, cache)
-			new.Transforms = append(new.Transforms, &newTransform)
+	if origTask.Transform != nil {
+		new.Transform = &ast.Transform{
+			Matches: templater.ReplaceGlobs(origTask.Transform.Matches, cache),
+			Yields:  templater.ReplaceGlobs(origTask.Transform.Yields, cache),
+			Subst:   templater.Replace(origTask.Transform.Subst, cache),
 		}
 		var checker fingerprint.SourcesCheckable = fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
 
@@ -158,7 +157,6 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 		// Adding new variables, requires us to refresh the templaters
 		// cache of the the values manually
 		cache.ResetCache()
-
 	}
 
 	if len(origTask.Cmds) > 0 {
@@ -168,13 +166,7 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 				continue
 			}
 			if cmd.For != nil {
-				sources := []*ast.Glob{}
-				generates := []*ast.Glob{}
-				for _, t := range new.Transforms {
-					sources = append(sources, t.Matches...)
-					generates = append(generates, t.Yields...)
-				}
-				list, keys, err := itemsFromFor(cmd.For, new.Dir, sources, generates, vars, origTask.Location, cache)
+				list, keys, err := itemsFromFor(cmd.For, new.Dir, new.Transform, vars, origTask.Location, cache)
 				if err != nil {
 					return nil, err
 				}
@@ -187,8 +179,13 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 				}
 				// Create a new command for each item in the list
 				for i, loopValue := range list {
-					extra := map[string]any{
-						as: loopValue,
+					extra := map[string]any{}
+					if pairMap, ok := loopValue.(map[string]string); ok {
+						extra["MATCH"] = pairMap["MATCH"]
+						extra["YIELD"] = pairMap["YIELD"]
+						extra[as] = pairMap["MATCH"]
+					} else {
+						extra[as] = loopValue
 					}
 					if len(keys) > 0 {
 						extra["KEY"] = keys[i]
@@ -223,13 +220,7 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 				continue
 			}
 			if dep.For != nil {
-				sources := []*ast.Glob{}
-				generates := []*ast.Glob{}
-				for _, t := range new.Transforms {
-					sources = append(sources, t.Matches...)
-					generates = append(generates, t.Yields...)
-				}
-				list, keys, err := itemsFromFor(dep.For, new.Dir, sources, generates, vars, origTask.Location, cache)
+				list, keys, err := itemsFromFor(dep.For, new.Dir, new.Transform, vars, origTask.Location, cache)
 				if err != nil {
 					return nil, err
 				}
@@ -242,8 +233,13 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 				}
 				// Create a new command for each item in the list
 				for i, loopValue := range list {
-					extra := map[string]any{
-						as: loopValue,
+					extra := map[string]any{}
+					if pairMap, ok := loopValue.(map[string]string); ok {
+						extra["MATCH"] = pairMap["MATCH"]
+						extra["YIELD"] = pairMap["YIELD"]
+						extra[as] = pairMap["MATCH"]
+					} else {
+						extra[as] = loopValue
 					}
 					if len(keys) > 0 {
 						extra["KEY"] = keys[i]
@@ -298,12 +294,17 @@ func asAnySlice[T any](slice []T) []any {
 func itemsFromFor(
 	f *ast.For,
 	dir string,
-	sources []*ast.Glob,
-	generates []*ast.Glob,
+	transform *ast.Transform,
 	vars *ast.Vars,
 	location *ast.Location,
 	cache *templater.Cache,
 ) ([]any, []string, error) {
+	var matches []*ast.Glob
+	var yields []*ast.Glob
+	if transform != nil {
+		matches = append(matches, transform.Matches...)
+		yields = append(yields, transform.Yields...)
+	}
 	var keys []string // The list of keys to loop over (only if looping over a map)
 	var values []any  // The list of values to loop over
 	// Get the list from a matrix
@@ -320,9 +321,9 @@ func itemsFromFor(
 	if len(f.List) > 0 {
 		return f.List, nil, nil
 	}
-	// Get the list from the task sources
-	if f.From == "sources" {
-		glist, err := fingerprint.Globs(dir, sources)
+	// Get the list from the task matches
+	if f.From == "matches" {
+		glist, err := fingerprint.Globs(dir, matches)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -334,9 +335,23 @@ func itemsFromFor(
 		}
 		values = asAnySlice(glist)
 	}
-	// Get the list from the task generates
-	if f.From == "generates" {
-		glist, err := fingerprint.Globs(dir, generates)
+	// Get the list from the task yields
+	if f.From == "yields" {
+		// Yields are outputs of the task and may not exist on disk yet (e.g.
+		// before the task's commands have run). Literal (non-glob) yield
+		// patterns are used as-is instead of being globbed, since globbing
+		// requires the file to already exist. Patterns containing glob
+		// metacharacters are still globbed against the filesystem.
+		var literals []string
+		var globs []*ast.Glob
+		for _, y := range yields {
+			if y.Negate || strings.ContainsAny(y.Glob, "*?[") {
+				globs = append(globs, y)
+			} else {
+				literals = append(literals, y.Glob)
+			}
+		}
+		glist, err := fingerprint.Globs(dir, globs)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -346,8 +361,64 @@ func itemsFromFor(
 				return nil, nil, err
 			}
 		}
+		glist = append(glist, literals...)
+		sort.Strings(glist)
 		values = asAnySlice(glist)
 	}
+
+	if f.From == "transform" && transform.Subst != "" {
+		parts := strings.SplitN(transform.Subst, ":", 2)
+		if len(parts) != 2 {
+			return nil, nil, errors.TaskfileInvalidError{
+				URI: location.Taskfile,
+				Err: fmt.Errorf("invalid transform subst format '%s' (expected from:to)", transform.Subst),
+			}
+		}
+		fromPattern, toPattern := parts[0], parts[1]
+		wildcardIdx := strings.IndexByte(fromPattern, '%')
+		prefix := fromPattern
+		suffix := ""
+		if wildcardIdx != -1 {
+			prefix = fromPattern[:wildcardIdx]
+			suffix = fromPattern[wildcardIdx+1:]
+		}
+
+		tglob := []*ast.Glob{}
+		matchGlob, _ := transform.SubstToGlob()
+		tglob = append(tglob, matchGlob)
+		glist, err := fingerprint.Globs(dir, tglob)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, v := range glist {
+			relPath, err := filepath.Rel(dir, v)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// If wildcardIdx was found, validate and extract stem text
+			var yieldPath string
+			if wildcardIdx != -1 {
+				if !strings.HasPrefix(relPath, prefix) || !strings.HasSuffix(relPath, suffix) || len(relPath) < len(prefix)+len(suffix) {
+					continue // Skip files matched by generic globs that don't match our subst rule
+				}
+				stem := relPath[len(prefix) : len(relPath)-len(suffix)]
+				yieldPath = strings.ReplaceAll(toPattern, "%", stem)
+			} else {
+				if relPath != fromPattern {
+					continue
+				}
+				yieldPath = toPattern
+			}
+
+			// Store as a mapping context dictionary
+			values = append(values, map[string]string{
+				"MATCH": relPath,
+				"YIELD": yieldPath,
+			})
+		}
+	}
+
 	// Get the list from a variable and split it up
 	if f.Var != "" {
 		if vars != nil {
@@ -433,7 +504,7 @@ func resolveEnumRefs(requires *ast.Requires, cache *templater.Cache) error {
 	return nil
 }
 
-// product generates the cartesian product of the input map of slices.
+// product yields the cartesian product of the input map of slices.
 func product(matrix *ast.Matrix) []map[string]any {
 	if matrix.Len() == 0 {
 		return nil

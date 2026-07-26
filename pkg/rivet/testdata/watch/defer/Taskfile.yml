@@ -5,9 +5,9 @@ tasks:
       - echo "server start"
       - defer: sleep 0.2; echo "server end"
       - sleep 10
-    transforms:
-      - matches:
-          - 'foo.txt'
+    transform:
+      matches:
+        - 'foo.txt'
   client:
     cmds:
       - sleep 0.2

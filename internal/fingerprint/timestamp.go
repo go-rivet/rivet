@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sync"
 	"time"
 
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
@@ -26,13 +25,17 @@ func NewTimestampChecker(tempDir string, dry bool) *TimestampChecker {
 }
 
 func (checker *TimestampChecker) IsUpToDate(t *ast.Task) (bool, error) {
-	src := []*ast.Glob{}
-	gen := []*ast.Glob{}
-	for _, tr := range t.Transforms {
-		src = append(src, tr.Matches...)
-		gen = append(gen, tr.Yields...)
+	var matches []*ast.Glob
+	var yields []*ast.Glob
+	if t.Transform != nil {
+		matches = append(matches, t.Transform.Matches...)
+		yields = append(yields, t.Transform.Yields...)
+		if matchGlob, yieldGlob := t.Transform.SubstToGlob(); matchGlob != nil && yieldGlob != nil {
+			matches = append(matches, matchGlob)
+			yields = append(yields, yieldGlob)
+		}
 	}
-	if len(src) == 0 {
+	if len(matches) == 0 {
 		return false, nil
 	}
 
@@ -45,35 +48,45 @@ func (checker *TimestampChecker) IsUpToDate(t *ast.Task) (bool, error) {
 	}
 
 	// Setup tracking vars.
-	var mu sync.Mutex
 	generateMaxTime := timestampModTime
-	shouldUpdate := false
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Check the generates globs, and collect the max generate time to use
 	// when checking the sources globs.
-	err = walkDirWithProvider(ctx, t.Dir, gen, newGenerateReadDirProvider(ctx, cancel, &mu, &generateMaxTime, &shouldUpdate))
+	genResults, err := walkDirWithProvider(context.Background(), t.Dir, yields)
 	if err != nil {
 		return false, err
+	}
+	maxTime, genOutOfDate, err := evaluateGenerateResults(genResults)
+	if err != nil {
+		return false, err
+	}
+	if genOutOfDate {
+		return false, nil // Missing/empty generates, task must run.
+	}
+	if maxTime.After(generateMaxTime) {
+		generateMaxTime = maxTime
 	}
 	if generateMaxTime.IsZero() {
 		return false, nil // No files? task must run.
 	}
 
 	// Check the sources globs.
-	err = walkDirWithProvider(ctx, t.Dir, src, newSourceReadDirProvider(ctx, cancel, &mu, &generateMaxTime, &shouldUpdate))
+	srcResults, err := walkDirWithProvider(context.Background(), t.Dir, matches)
 	if err != nil {
 		return false, err
 	}
-	if shouldUpdate {
+	srcOutOfDate, err := evaluateSourceResults(srcResults, generateMaxTime)
+	if err != nil {
+		return false, err
+	}
+	if srcOutOfDate {
 		return false, nil // Out of date, task must run.
 	}
 
-	// Not Dry? Update the timestamp file.
+	// Not Dry? Update the timestamp file to the newest verified state (generateMaxTime),
+	// rather than time.Now(), so it can't race against a source mutated moments later.
 	if !checker.dry {
-		taskTime := time.Now()
-		if err := os.Chtimes(checker.timestampFilePath(t), taskTime, taskTime); err != nil {
+		if err := os.Chtimes(checker.timestampFilePath(t), generateMaxTime, generateMaxTime); err != nil {
 			return false, err
 		}
 	}
@@ -86,24 +99,22 @@ func (checker *TimestampChecker) Kind() string {
 }
 
 func (checker *TimestampChecker) Value(t *ast.Task) (any, error) {
-	src := make([]*ast.Glob, 0, len(t.Transforms))
-	for _, tr := range t.Transforms {
-		src = append(src, tr.Matches...)
+	var matches []*ast.Glob
+	if t.Transform != nil {
+		matches = t.Transform.Matches
 	}
-	if len(src) == 0 {
+	if len(matches) == 0 {
 		return time.Unix(0, 0), nil
 	}
 
-	// Setup tracking vars.
-	var mu sync.Mutex
-	var sourcesMaxTime time.Time
 	ctx := context.Background()
 
 	// Determine the sources max time.
-	err := walkDirWithProvider(ctx, t.Dir, src, newMaxTimeReadDirProvider(&mu, &sourcesMaxTime))
+	results, err := walkDirWithProvider(ctx, t.Dir, matches)
 	if err != nil {
 		return time.Now(), err
 	}
+	sourcesMaxTime := evaluateMaxTimeResults(results)
 	if sourcesMaxTime.IsZero() {
 		return time.Unix(0, 0), nil
 	}
