@@ -10,9 +10,9 @@ require (
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v3 v3.0.4
-	golang.org/x/sync v0.20.0
+	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.43.0
-	golang.org/x/text v0.37.0
+	golang.org/x/text v0.41.0
 	mvdan.cc/sh/moreinterp v0.0.0-20260120230322-19def062a997
 	mvdan.cc/sh/v3 v3.13.2-0.20260503214111-9e7dd28c81cf
 )
