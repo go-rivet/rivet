@@ -3,7 +3,7 @@ module github.com/go-rivet/rivet
 go 1.25.10
 
 require (
-	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/dominikbraun/graph v0.23.0
 	github.com/elliotchance/orderedmap/v3 v3.1.0
 	github.com/fsnotify/fsnotify v1.9.0
