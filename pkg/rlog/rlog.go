@@ -37,6 +37,8 @@ func Init(opts RlogOptions) {
 	log := &RlogHandler{
 		Handler: func() slog.Handler {
 			switch lf := strings.ToLower(opts.Format); lf {
+			case "otel":
+				return newOTelHandler(opts.Stdout, hOpts)
 			case "json":
 				return slog.NewJSONHandler(opts.Stdout, hOpts)
 			case "text":

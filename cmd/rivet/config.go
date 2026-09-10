@@ -50,7 +50,7 @@ type Config struct {
 	V1        bool   `flag:"v" noenv:"true"`
 	V2        bool   `flag:"vv" noenv:"true"`
 	V3        bool   `flag:"vvv" noenv:"true"`
-	LogFormat string `flag:"log" noenv:"true" doc:"Log format (\"json\" or \"text\")."`
+	LogFormat string `flag:"log" noenv:"true" doc:"Log format (\"otel\", \"json\", or \"text\")."`
 	Color     bool   `sflag:"c" default:"true" doc:"Colored output. Enabled by default. Set flag to false or use NO_COLOR=1 to disable."`
 
 	// Output flags

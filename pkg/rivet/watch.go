@@ -156,7 +156,8 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 				wg.Wait() // This is the single wait point, for the entry loop and the following loop.
 
 				e.Compiler.ResetCache()
-				ctx, cancel = context.WithCancel(e.ctx)
+				// Each watch-triggered restart is a distinct execution, so it gets its own trace.
+				ctx, cancel = context.WithCancel(rlog.WithTrace(e.ctx, rlog.NewTraceID(), "", ""))
 				defer cancel()
 				for _, c := range calls {
 					wg.Add(1)

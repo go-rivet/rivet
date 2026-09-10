@@ -69,8 +69,8 @@ func main() {
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 		Level:  logLevelVar,
-		// FIXME: format
-		Color: config.Color,
+		Format: config.LogFormat,
+		Color:  config.Color,
 	})
 
 	// Run rivet.

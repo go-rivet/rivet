@@ -44,6 +44,8 @@ type MatchingTask struct {
 
 // Run runs Task
 func (e *Executor) Run(ctx context.Context, calls ...*Call) error {
+	// One trace per command invocation; each RunTask call mints its own span.
+	ctx = rlog.WithTrace(ctx, rlog.NewTraceID(), "", "")
 	e.ctx = ctx
 
 	// check if given tasks exist
@@ -127,6 +129,22 @@ func (e *Executor) splitRegularAndWatchCalls(calls ...*Call) (regularCalls []*Ca
 
 // RunTask runs a task by its name
 func (e *Executor) RunTask(ctx context.Context, call *Call) error {
+	// Attach trace/span identifiers so logs produced by this task carry them.
+	// The trace ID and parent span are inherited from the caller (if any) so
+	// dependent/sub-task runs share a trace and record the calling task's span,
+	// while each task run gets its own span ID.
+	traceID := rlog.NewTraceID()
+	var parentSpanID string
+	if info, ok := rlog.TraceFromContext(ctx); ok {
+		traceID = info.TraceID
+		parentSpanID = info.SpanID
+	}
+	ctx = rlog.WithTrace(ctx, traceID, rlog.NewSpanID(), parentSpanID)
+
+	if call.Kind == "" {
+		call.Kind = CallKindDirect
+	}
+
 	// Inject prompted vars into call if available
 	if e.promptedVars != nil {
 		if call.Vars == nil {
@@ -215,10 +233,10 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			return hp[len(hp)-1]
 		}()
 		start := time.Now()
-		rlog.Task(ctx, "Task started", "task", call.Task, "action", "start", "hash", hash)
+		rlog.Task(ctx, "Task started", "task", call.Task, "action", "start", "hash", hash, "kind", string(call.Kind))
 		defer func() {
 			elapsed := time.Since(start).String()
-			rlog.Task(ctx, "Task finished", "task", call.Task, "action", "finish", "hash", hash, "duration", elapsed, "error", err)
+			rlog.Task(ctx, "Task finished", "task", call.Task, "action", "finish", "hash", hash, "duration", elapsed, "error", err, "kind", string(call.Kind))
 		}()
 
 		if len(t.Deps) > 0 {
@@ -281,7 +299,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 
 		for i := range t.Cmds {
 			if t.Cmds[i].Defer {
-				defer e.runDeferred(t, call, i, t.Vars, &deferredExitCode)
+				defer e.runDeferred(ctx, t, call, i, t.Vars, &deferredExitCode)
 				continue
 			}
 
@@ -339,7 +357,7 @@ func (e *Executor) runDeps(ctx context.Context, t *ast.Task) error {
 
 	for _, d := range t.Deps {
 		g.Go(func() error {
-			err := e.RunTask(ctx, &Call{Task: d.Task, Vars: d.Vars, Indirect: true})
+			err := e.RunTask(ctx, &Call{Task: d.Task, Vars: d.Vars, Indirect: true, Kind: CallKindDep})
 			if err != nil {
 				return err
 			}
@@ -350,9 +368,16 @@ func (e *Executor) runDeps(ctx context.Context, t *ast.Task) error {
 	return g.Wait()
 }
 
-func (e *Executor) runDeferred(t *ast.Task, call *Call, i int, vars *ast.Vars, deferredExitCode *uint8) {
+func (e *Executor) runDeferred(taskCtx context.Context, t *ast.Task, call *Call, i int, vars *ast.Vars, deferredExitCode *uint8) {
+	// Detached from taskCtx's cancellation so cleanup still runs if the task's
+	// own context was cancelled (e.g. a sibling failed under --failfast), but
+	// the trace/span identifiers are carried over so logs still attribute
+	// correctly to the task that deferred this command.
 	ctx, cancel := context.WithCancel(e.ctx)
 	defer cancel()
+	if info, ok := rlog.TraceFromContext(taskCtx); ok {
+		ctx = rlog.WithTrace(ctx, info.TraceID, info.SpanID, info.ParentSpanID)
+	}
 
 	cmd := t.Cmds[i]
 	cache := &templater.Cache{Vars: vars}
@@ -392,7 +417,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		reacquire := e.releaseConcurrencyLimit()
 		defer reacquire()
 
-		err := e.RunTask(ctx, &Call{Task: cmd.Task, Vars: cmd.Vars, Indirect: true})
+		err := e.RunTask(ctx, &Call{Task: cmd.Task, Vars: cmd.Vars, Indirect: true, Kind: CallKindCmd})
 		var exitCode interp.ExitStatus
 		if errors.As(err, &exitCode) && cmd.IgnoreError {
 			rlog.Debugf(ctx, "task: [%s] task error ignored: %v\n", t.Name(), err)
@@ -491,7 +516,9 @@ func (e *Executor) startExecution(ctx context.Context, t *ast.Task, execute func
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(e.ctx)
+	// Derive from the passed-in ctx (not e.ctx) so per-task values, such as
+	// the trace/span identifiers set in RunTask, are preserved.
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	e.executionHashes[h] = ctx
