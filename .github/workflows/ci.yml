@@ -76,6 +76,10 @@ jobs:
         run: |
           make test
 
+  e2e:
+    needs: [build, test]
+    uses: ./.github/workflows/e2e.yml
+
   release:
     name: Release
     needs: [lint, test]
