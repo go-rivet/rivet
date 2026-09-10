@@ -1,6 +1,6 @@
 module github.com/go-rivet/rivet
 
-go 1.25.10
+go 1.26.0
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
@@ -10,7 +10,7 @@ require (
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.11.1
 	go.yaml.in/yaml/v3 v3.0.4
-	golang.org/x/sync v0.20.0
+	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.43.0
 	golang.org/x/text v0.37.0
 	mvdan.cc/sh/moreinterp v0.0.0-20260120230322-19def062a997
