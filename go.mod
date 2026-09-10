@@ -9,7 +9,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.11.1
-	go.yaml.in/yaml/v3 v3.0.4
+	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.43.0
 	golang.org/x/text v0.37.0
