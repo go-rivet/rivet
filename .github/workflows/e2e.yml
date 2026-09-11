@@ -11,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout rivet repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -38,7 +38,7 @@ jobs:
           rivet --version
 
       - name: Clone go-rivet/e2e repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: go-rivet/e2e
           path: e2e
