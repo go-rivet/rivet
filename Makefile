@@ -28,8 +28,7 @@ PLATFORMS    = darwin/amd64 \
                linux/arm/7 \
                windows/386 \
                windows/amd64 \
-               windows/arm64 \
-               windows/arm/7
+               windows/arm64
 
 # Dynamically locate the user's Go path or Go bin directory
 GOPATH=$(shell go env GOPATH)
