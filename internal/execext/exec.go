@@ -90,13 +90,16 @@ func RunCommand(ctx context.Context, opts *RunCommandOptions) error {
 	return r.Run(ctx, p)
 }
 
+var escapeReplacer = strings.NewReplacer(
+	" ", `\ `,
+	"&", `\&`,
+	"(", `\(`,
+	")", `\)`,
+)
+
 func escape(s string) string {
 	s = filepath.ToSlash(s)
-	s = strings.ReplaceAll(s, " ", `\ `)
-	s = strings.ReplaceAll(s, "&", `\&`)
-	s = strings.ReplaceAll(s, "(", `\(`)
-	s = strings.ReplaceAll(s, ")", `\)`)
-	return s
+	return escapeReplacer.Replace(s)
 }
 
 // ExpandLiteral is a wrapper around [expand.Literal]. It will escape the input

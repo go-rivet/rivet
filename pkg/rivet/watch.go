@@ -112,7 +112,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 					continue
 				}
 				if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Write) {
-					if !slices.Contains(watchFiles, event.Name) {
+					if !containsCanonicalPath(watchFiles, event.Name) {
 						relPath := event.Name
 						if rel, err := filepath.Rel(e.Dir, event.Name); err == nil {
 							relPath = rel
@@ -140,7 +140,7 @@ func (e *Executor) watchTasks(calls ...*Call) error {
 							rlog.Errorf(ctx, "%v\n", err)
 						}
 					} else {
-						if !slices.Contains(watchFiles, event.Name) {
+						if !containsCanonicalPath(watchFiles, event.Name) {
 							relPath := event.Name
 							if rel, err := filepath.Rel(e.Dir, event.Name); err == nil {
 								relPath = rel
@@ -277,6 +277,20 @@ var ignorePaths = []string{
 func ShouldIgnore(path string) bool {
 	for _, p := range ignorePaths {
 		if strings.Contains(path, fmt.Sprintf("%s/", p)) || strings.HasSuffix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalizePath(path string) string {
+	return filepath.ToSlash(filepath.Clean(path))
+}
+
+func containsCanonicalPath(paths []string, candidate string) bool {
+	candidate = canonicalizePath(candidate)
+	for _, p := range paths {
+		if canonicalizePath(p) == candidate {
 			return true
 		}
 	}
