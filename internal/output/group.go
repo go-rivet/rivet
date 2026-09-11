@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"io"
+	"sync"
 
 	"github.com/go-rivet/rivet/internal/templater"
 )
@@ -32,13 +33,19 @@ type groupWriter struct {
 	writer     io.Writer
 	buff       bytes.Buffer
 	begin, end string
+	mu         sync.Mutex
 }
 
 func (gw *groupWriter) Write(p []byte) (int, error) {
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
 	return gw.buff.Write(p)
 }
 
 func (gw *groupWriter) close() error {
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+
 	switch {
 	case gw.buff.Len() == 0:
 		return nil
