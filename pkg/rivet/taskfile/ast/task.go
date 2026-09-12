@@ -124,6 +124,8 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 			Prompt        Prompt
 			Summary       string
 			Aliases       []string
+			Sources       []*Glob
+			Generates     []*Glob
 			Transform     *Transform
 			Status        []string
 			Preconditions []*Precondition
@@ -161,6 +163,12 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 		t.Summary = task.Summary
 		t.Aliases = task.Aliases
 		t.Transform = task.Transform
+		if t.Transform == nil && (len(task.Sources) > 0 || len(task.Generates) > 0) {
+			t.Transform = &Transform{
+				Matches: task.Sources,
+				Yields:  task.Generates,
+			}
+		}
 		t.Status = task.Status
 		t.Preconditions = task.Preconditions
 		t.Dir = task.Dir

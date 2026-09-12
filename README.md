@@ -32,7 +32,7 @@ RIVET_VERSION="v0.2.0" curl -sSL https://raw.githubusercontent.com/go-rivet/rive
 
 Statically compiled binaries are available for multiple operating systems and architectures. Download the matching executable for your host platform directly from the **GitHub Releases** panel:
 
-*   **Linux:** `linux/amd64`, `linux/arm64`, `linux/arm/v7`, `linux/386`
+*   **Linux:** `linux/amd64`, `linux/arm64`, `linux/386`
 *   **macOS:** `darwin/amd64`, `darwin/arm64`
 *   **Windows:** `windows/amd64`, `windows/arm64`, `windows/386`
 

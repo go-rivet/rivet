@@ -321,8 +321,8 @@ func itemsFromFor(
 	if len(f.List) > 0 {
 		return f.List, nil, nil
 	}
-	// Get the list from the task matches
-	if f.From == "matches" {
+	// Get the list from the task matches / sources
+	if f.From == "matches" || f.From == "sources" {
 		glist, err := fingerprint.Globs(dir, matches)
 		if err != nil {
 			return nil, nil, err
@@ -335,8 +335,8 @@ func itemsFromFor(
 		}
 		values = asAnySlice(glist)
 	}
-	// Get the list from the task yields
-	if f.From == "yields" {
+	// Get the list from the task yields / generates
+	if f.From == "yields" || f.From == "generates" {
 		// Yields are outputs of the task and may not exist on disk yet (e.g.
 		// before the task's commands have run). Literal (non-glob) yield
 		// patterns are used as-is instead of being globbed, since globbing
