@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/go-rivet/rivet/internal/config"
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/internal/sort"
 	"github.com/go-rivet/rivet/internal/version"
@@ -22,7 +23,7 @@ import (
 	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
-var config Config
+var flagConfig Config
 
 func main() {
 	exit := func(err error) {
@@ -36,7 +37,7 @@ func main() {
 				_, _ = fmt.Fprintf(os.Stdout, "::error title=Task failed::%v\n", err)
 			}
 		}
-		if err, ok := err.(*errors.TaskRunError); ok && config.ExitCode {
+		if err, ok := err.(*errors.TaskRunError); ok && flagConfig.ExitCode {
 			os.Exit(err.TaskExitCode())
 		}
 		if err, ok := err.(errors.TaskError); ok {
@@ -45,12 +46,21 @@ func main() {
 		os.Exit(errors.CodeUnknown)
 	}
 
+	// Load env file if present before parsing flags.
+	var envFile string
+	taskfilePath := config.PeekTaskfilePath(os.Args[1:])
+	if envFile = config.FindEnvFile(taskfilePath); envFile != "" {
+		if err := config.LoadEnv(envFile); err != nil {
+			exit(err)
+		}
+	}
+
 	// Config and flags.
-	if err := ParseFlags(&config, "rivet"); err != nil {
+	if err := ParseFlags(&flagConfig, "rivet"); err != nil {
 		exit(err)
 	}
-	config.Adjust()
-	if err := config.Validate(); err != nil {
+	flagConfig.Adjust()
+	if err := flagConfig.Validate(); err != nil {
 		exit(err)
 	}
 
@@ -60,7 +70,7 @@ func main() {
 
 	// Logging.
 	vl := VerboseLevel(0)
-	if err := vl.Set(config.Verbose); err != nil {
+	if err := vl.Set(flagConfig.Verbose); err != nil {
 		exit(err)
 	}
 	logLevelVar := &slog.LevelVar{}
@@ -69,9 +79,12 @@ func main() {
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 		Level:  logLevelVar,
-		Format: config.LogFormat,
-		Color:  config.Color,
+		Format: flagConfig.LogFormat,
+		Color:  flagConfig.Color,
 	})
+
+	// Log the operating conditions.
+	rlog.Debug(ctx, "Rivet operating conditions:", "envFile", envFile, "entrypoint", flagConfig.Taskfile)
 
 	// Run rivet.
 	if err := run(ctx); err != nil {
@@ -82,16 +95,16 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	if config.Version {
+	if flagConfig.Version {
 		fmt.Println(version.GetVersionWithBuildInfo())
 		return nil
 	}
-	if config.Help {
+	if flagConfig.Help {
 		flag.Usage()
 		return nil
 	}
 
-	if config.Init {
+	if flagConfig.Init {
 		cmdArgs, _ := GetCliArgs()
 		wd, err := os.Getwd()
 		if err != nil {
@@ -116,22 +129,22 @@ func run(ctx context.Context) error {
 	}
 
 	// Setup an executor.
-	e := NewExecutor(&config)
+	e := NewExecutor(&flagConfig)
 	if err := e.Setup(ctx); err != nil {
 		return err
 	}
 
 	// Early return conditions.
-	if config.ClearCache {
+	if flagConfig.ClearCache {
 		cachePath := filepath.Join(e.TempDir.Remote, "remote")
 		return os.RemoveAll(cachePath)
 	}
 	listOptions := task.NewListOptions(
-		config.List,
-		config.ListAll,
-		config.ListJson,
-		config.NoStatus,
-		config.Nested,
+		flagConfig.List,
+		flagConfig.ListAll,
+		flagConfig.ListJson,
+		flagConfig.NoStatus,
+		flagConfig.Nested,
 	)
 	if listOptions.ShouldListTasks() {
 		foundTasks, err := e.ListTasks(listOptions)
@@ -152,10 +165,10 @@ func run(ctx context.Context) error {
 	}
 	e.Taskfile.Vars.Merge(globals, nil) // Merge CLI variables first (e.g. FOO=bar) so they take priority over Taskfile defaults
 	e.Taskfile.Vars.ReverseMerge(specialVars(cliArgsPreDash, cliArgsPostDash), nil)
-	if !config.Watch {
+	if !flagConfig.Watch {
 		e.InterceptInterruptSignals()
 	}
-	if config.Status {
+	if flagConfig.Status {
 		return e.Status(ctx, calls...)
 	}
 
@@ -220,7 +233,7 @@ func (o *flagsOption) ApplyToExecutor(e *task.Executor) {
 
 	e.Options(
 		task.WithDir(dir),
-		task.WithEntrypoint(c.Entrypoint),
+		task.WithEntrypoint(c.Taskfile),
 		task.WithForce(c.Force),
 		task.WithForceAll(c.ForceAll),
 		task.WithInsecure(c.Insecure),
@@ -261,9 +274,9 @@ func specialVars(cliArgsPreDash []string, cliArgsPostDash []string) *ast.Vars {
 
 	vars.Set("CLI_ARGS", ast.Var{Value: cliArgsPostDashQuoted})
 	vars.Set("CLI_ARGS_LIST", ast.Var{Value: cliArgsPostDash})
-	vars.Set("CLI_FORCE", ast.Var{Value: config.Force || config.ForceAll})
-	vars.Set("CLI_OFFLINE", ast.Var{Value: config.Offline})
-	vars.Set("CLI_ASSUME_YES", ast.Var{Value: config.AssumeYes})
+	vars.Set("CLI_FORCE", ast.Var{Value: flagConfig.Force || flagConfig.ForceAll})
+	vars.Set("CLI_OFFLINE", ast.Var{Value: flagConfig.Offline})
+	vars.Set("CLI_ASSUME_YES", ast.Var{Value: flagConfig.AssumeYes})
 
 	return vars
 }

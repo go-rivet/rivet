@@ -3,6 +3,7 @@ package rlog
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -81,6 +82,13 @@ func (h *CliHandler) Handle(ctx context.Context, r slog.Record) error {
 		buf.WriteString(r.Message)
 	} else {
 		buf.WriteString(strings.TrimSuffix(r.Message, "\n"))
+		for _, a := range h.attrs {
+			fmt.Fprintf(&buf, " %s=%v", a.Key, a.Value.Any())
+		}
+		r.Attrs(func(a slog.Attr) bool {
+			fmt.Fprintf(&buf, " %s=%v", a.Key, a.Value.Any())
+			return true
+		})
 	}
 	if startColor != "" {
 		log = append([]byte(startColor), buf.Bytes()...)

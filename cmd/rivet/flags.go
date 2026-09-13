@@ -105,7 +105,7 @@ func ParseFlags(cfg interface{}, appName string) error {
 		// Combine configuration layers: default tag -> environment variable
 		value := flagDefault
 		if flagEnv {
-			if envVal, exists := os.LookupEnv(getEnvName(appName, flagName)); exists {
+			if envVal, exists := os.LookupEnv(getEnvName(appName, flagName)); exists && envVal != "" {
 				value = envVal
 			}
 		}

@@ -37,9 +37,9 @@ type Config struct {
 	ForceAll    bool `sflag:"f" noenv:"true" doc:"Forces execution even when the task is up-to-date."`
 
 	// Directory flags
-	Dir        string `sflag:"d" noenv:"true" doc:"Sets the directory in which Task will execute and look for a Taskfile."`
-	Entrypoint string `flag:"taskfile" sflag:"t" noenv:"true" doc:"Choose which Taskfile to run. Defaults to \"Taskfile.yml\"."`
-	Global     bool   `sflag:"g" noenv:"true" doc:"Runs global Taskfile, from $HOME/{T,t}askfile.{yml,yaml}."`
+	Dir      string `sflag:"d" noenv:"true" doc:"Sets the directory in which Task will execute and look for a Taskfile."`
+	Taskfile string `flag:"taskfile" sflag:"t" doc:"Choose which Taskfile to run."`
+	Global   bool   `sflag:"g" noenv:"true" doc:"Runs global Taskfile, from $HOME/{T,t}askfile.{yml,yaml}."`
 
 	// Watch flags
 	Watch    bool          `sflag:"w" noenv:"true" doc:"Enables watch of the given task."`
@@ -81,7 +81,7 @@ type Config struct {
 }
 
 func (c *Config) Adjust() {
-	c.Dir = cmp.Or(c.Dir, filepath.Dir(c.Entrypoint))
+	c.Dir = cmp.Or(c.Dir, filepath.Dir(c.Taskfile))
 
 	switch {
 	case c.V3:
