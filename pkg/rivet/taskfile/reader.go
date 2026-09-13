@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -411,7 +413,7 @@ func (r *Reader) readNode(ctx context.Context, node Node) (*ast.Taskfile, error)
 	}
 
 	var tf ast.Taskfile
-	if err := yaml.Unmarshal(b, &tf); err != nil {
+	if err := yaml.Unmarshal(normalizeCommandShortcuts(b), &tf); err != nil {
 		// Decode the taskfile and add the file info the any errors
 		taskfileDecodeErr := &errors.TaskfileDecodeError{}
 		if errors.As(err, &taskfileDecodeErr) {
@@ -440,6 +442,71 @@ func (r *Reader) readNode(ctx context.Context, node Node) (*ast.Taskfile, error)
 	}
 
 	return &tf, nil
+}
+
+func normalizeCommandShortcuts(b []byte) []byte {
+	lines := strings.SplitAfter(string(b), "\n")
+	cmdsIndent := -1
+	taskIndent := -1
+	taskEntryIndent := -1
+	for i, line := range lines {
+		content := strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
+		trimmed := strings.TrimSpace(content)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(content) - len(strings.TrimLeft(content, " "))
+
+		if trimmed == "tasks:" {
+			taskIndent = indent
+			taskEntryIndent = -1
+			continue
+		}
+		if taskIndent >= 0 && indent <= taskIndent {
+			taskIndent = -1
+			taskEntryIndent = -1
+			cmdsIndent = -1
+		}
+		if taskIndent >= 0 && taskEntryIndent < 0 && indent > taskIndent {
+			taskEntryIndent = indent
+		}
+		if cmdsIndent >= 0 && indent <= cmdsIndent {
+			cmdsIndent = -1
+		}
+		if trimmed == "cmds:" {
+			cmdsIndent = indent
+			continue
+		}
+		if cmdsIndent >= 0 && indent > cmdsIndent && strings.HasPrefix(trimmed, "- ") {
+			command := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+			if strings.Contains(command, ": ") && !isStructuredCommand(command) &&
+				!strings.HasPrefix(command, "|") && !strings.HasPrefix(command, ">") &&
+				!strings.HasPrefix(command, "\"") && !strings.HasPrefix(command, "'") {
+				prefix := content[:len(content)-len(strings.TrimLeft(content, " "))]
+				lines[i] = prefix + "- " + strconv.Quote(command) + line[len(content):]
+			}
+			continue
+		}
+		if taskIndent >= 0 && indent == taskEntryIndent && strings.Contains(trimmed, ": ") {
+			if key, value, ok := strings.Cut(trimmed, ": "); ok && !strings.Contains(key, " ") &&
+				!strings.HasPrefix(value, "{") && !strings.HasPrefix(value, "[") &&
+				!strings.HasPrefix(value, "|") && !strings.HasPrefix(value, ">") &&
+				!strings.HasPrefix(value, "\"") && !strings.HasPrefix(value, "'") {
+				prefix := content[:len(content)-len(strings.TrimLeft(content, " "))]
+				lines[i] = prefix + key + ": " + strconv.Quote(value) + line[len(content):]
+			}
+		}
+	}
+	return []byte(strings.Join(lines, ""))
+}
+
+func isStructuredCommand(command string) bool {
+	for _, key := range []string{"cmd", "task", "defer", "for", "if", "set", "shopt", "vars", "ignore_error", "platforms"} {
+		if strings.HasPrefix(command, key+": ") {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Reader) readNodeContent(ctx context.Context, node Node) ([]byte, error) {
