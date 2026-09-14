@@ -8,6 +8,7 @@ import (
 	"maps"
 	"regexp"
 	"strings"
+	"sync"
 
 	"text/template"
 
@@ -18,6 +19,36 @@ import (
 )
 
 var funcs = template.FuncMap{}
+
+// lookupRe matches a lone '{{ ... }}' expression, used by resolveDirectLookup.
+// Compiled once since regexp.MustCompile is expensive to run per call.
+var lookupRe = regexp.MustCompile(`^\{\{(.+)\}\}$`)
+
+// templateCache holds parsed templates keyed by their source text, avoiding
+// re-parsing (which allocates a lexer/AST) for strings seen more than once,
+// e.g. the same command template rendered for each item in a loop.
+var templateCache sync.Map // map[string]*template.Template
+
+// bufPool reuses bytes.Buffers across template executions to cut down on
+// per-call allocations.
+var bufPool = sync.Pool{
+	New: func() any { return new(bytes.Buffer) },
+}
+
+// parseTemplate returns a cached *template.Template for s, parsing and
+// caching it on first use.
+func parseTemplate(s string) (*template.Template, error) {
+	if t, ok := templateCache.Load(s); ok {
+		return t.(*template.Template), nil
+	}
+	tpl, err := template.New("").Funcs(funcs).Parse(s)
+	if err != nil {
+		return nil, err
+	}
+	// If another goroutine raced us, keep whichever was stored first.
+	actual, _ := templateCache.LoadOrStore(s, tpl)
+	return actual.(*template.Template), nil
+}
 
 func init() {
 	maps.Copy(funcs, sprig.SprigFuncs)
@@ -65,13 +96,9 @@ func ResolveRef(ref string, cache *Cache) any {
 	// Variable to intercept and store the actual typed value
 	var resolvedValue any
 
-	// Create a local function map combining global funcs and our interceptor
-	localFuncs := make(template.FuncMap)
-	maps.Copy(localFuncs, funcs)
-
 	// The "resolve" function captures the argument and returns an empty string
 	// so it doesn't mess up standard template execution outputs.
-	localFuncs["resolve"] = func(v any) string {
+	resolve := func(v any) string {
 		resolvedValue = v
 		return ""
 	}
@@ -79,7 +106,10 @@ func ResolveRef(ref string, cache *Cache) any {
 	// Wrap the user's reference inside our interceptor function: {{resolve (ref)}}
 	tmplString := fmt.Sprintf("{{resolve (%s)}}", ref)
 
-	t, err := template.New("resolver").Funcs(localFuncs).Parse(tmplString)
+	// Register the global funcs first, then layer the single-entry closure map
+	// on top; this avoids copying the whole global funcs map into a throwaway
+	// map on every call.
+	t, err := template.New("resolver").Funcs(funcs).Funcs(template.FuncMap{"resolve": resolve}).Parse(tmplString)
 	if err != nil {
 		cache.err = err
 		return nil
@@ -87,8 +117,10 @@ func ResolveRef(ref string, cache *Cache) any {
 
 	// Execute the template into a discard buffer.
 	// This forces the template to evaluate, triggers our function, and populates resolvedValue.
-	var discard bytes.Buffer
-	err = t.Execute(&discard, cache.cacheMap)
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+	err = t.Execute(buf, cache.cacheMap)
 	if err != nil {
 		cache.err = err
 		return nil
@@ -110,8 +142,7 @@ func resolveDirectLookup(text string, cache *Cache) any {
 
 	// Lookup should be in the form '{{.LOOKUP}}'.
 	// Captures everything inside the brackets so we can rewrite it.
-	re := regexp.MustCompile(`^\{\{(.+)\}\}$`)
-	match := re.FindStringSubmatch(text)
+	match := lookupRe.FindStringSubmatch(text)
 	if len(match) != 2 {
 		return text
 	}
@@ -120,10 +151,7 @@ func resolveDirectLookup(text string, cache *Cache) any {
 	// Variable to intercept and store the actual typed value
 	var resolvedValue any
 
-	// Create a local function map combining global funcs and our interceptor
-	localFuncs := make(template.FuncMap)
-	maps.Copy(localFuncs, funcs)
-	localFuncs["resolve"] = func(v any) string {
+	resolve := func(v any) string {
 		resolvedValue = v
 		return ""
 	}
@@ -131,15 +159,20 @@ func resolveDirectLookup(text string, cache *Cache) any {
 	// Wrap the inner expression: {{resolve (.LOOKUP)}}
 	tmplString := fmt.Sprintf("{{resolve (%s)}}", innerRef)
 
-	t, err := template.New("resolver").Funcs(localFuncs).Parse(tmplString)
+	// Register the global funcs first, then layer the single-entry closure map
+	// on top; this avoids copying the whole global funcs map into a throwaway
+	// map on every call.
+	t, err := template.New("resolver").Funcs(funcs).Funcs(template.FuncMap{"resolve": resolve}).Parse(tmplString)
 	if err != nil {
 		cache.err = err
 		return nil
 	}
 
 	// Execute the template to trigger the function evaluation
-	var discard bytes.Buffer
-	err = t.Execute(&discard, cache.cacheMap)
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+	err = t.Execute(buf, cache.cacheMap)
 	if err != nil {
 		cache.err = err
 		return nil
@@ -158,40 +191,54 @@ func ReplaceWithExtra[T any](v T, cache *Cache, extra map[string]any) T {
 		return v
 	}
 
-	// Optimization: skip if string is not a template
+	// Optimization: If it's a plain string with no templates, exit immediately.
+	// No map initialization, no deepcopy traversal overhead.
 	if s, ok := any(v).(string); ok {
 		if !strings.Contains(s, "{{") {
 			return v
 		}
 	}
 
-	// Initialize the cache map if it's not already initialized
-	if cache.cacheMap == nil {
-		cache.cacheMap = cache.Vars.ToCacheMap()
-	}
+	// For all structural or complex types (like slices, structs, pointers),
+	// let deepcopy traverse them. We defer map creation until we find a string
+	// that actually needs rendering.
+	var data map[string]any
 
-	// Create a copy of the cache map to avoid editing the original
-	// If there is extra data, merge it with the cache map
-	data := maps.Clone(cache.cacheMap)
-	if extra != nil {
-		maps.Copy(data, extra)
-	}
-
-	// Traverse the value and parse any template variables
-	copy, err := deepcopy.TraverseStringsFunc(v, func(v string) (string, error) {
-		// Optimization: skip if string is not a template
-		if !strings.Contains(v, "{{") {
-			return v, nil
+	copy, err := deepcopy.TraverseStringsFunc(v, func(str string) (string, error) {
+		// If an individual string inside the structure isn't a template, skip it.
+		if !strings.Contains(str, "{{") {
+			return str, nil
 		}
-		tpl, err := template.New("").Funcs(funcs).Parse(v)
+
+		// LAZY INITIALIZATION: We found a template! Only initialize the map now.
+		if cache.cacheMap == nil {
+			cache.cacheMap = cache.Vars.ToCacheMap()
+		}
+
+		// Prepare the data map context only on the first template found in this call
+		if data == nil {
+			if len(extra) > 0 {
+				data = make(map[string]any, len(cache.cacheMap)+len(extra))
+				maps.Copy(data, cache.cacheMap)
+				maps.Copy(data, extra)
+			} else {
+				data = cache.cacheMap
+			}
+		}
+
+		tpl, err := parseTemplate(str)
 		if err != nil {
-			return v, err
+			return str, err
 		}
-		var b bytes.Buffer
-		if err := tpl.Execute(&b, data); err != nil {
-			return v, err
+
+		buf := bufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		defer bufPool.Put(buf)
+
+		if err := tpl.Execute(buf, data); err != nil {
+			return str, err
 		}
-		return strings.ReplaceAll(b.String(), "<no value>", ""), nil
+		return strings.ReplaceAll(buf.String(), "<no value>", ""), nil
 	})
 	if err != nil {
 		cache.err = err

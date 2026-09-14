@@ -98,19 +98,25 @@ func (vars *Vars) Values() iter.Seq[Var] {
 // ToCacheMap converts Vars to an unordered map containing only the static
 // variables
 func (vars *Vars) ToCacheMap() (m map[string]any) {
-	defer vars.mutex.RUnlock()
+	if vars == nil || vars.om == nil {
+		return map[string]any{}
+	}
 	vars.mutex.RLock()
-	m = make(map[string]any, vars.Len())
-	for k, v := range vars.All() {
+	defer vars.mutex.RUnlock()
+	// Traverse the element list directly (avoids vars.Len()'s nested RLock and
+	// the All() iterator closure).
+	m = make(map[string]any, vars.om.Len())
+	for el := vars.om.Front(); el != nil; el = el.Next() {
+		v := el.Value
 		if v.Sh != nil && *v.Sh != "" {
 			// Dynamic variable is not yet resolved; trigger
 			// <no value> to be used in templates.
 			continue
 		}
 		if v.Live != nil {
-			m[k] = v.Live
+			m[el.Key] = v.Live
 		} else {
-			m[k] = v.Value
+			m[el.Key] = v.Value
 		}
 	}
 	return m
@@ -142,9 +148,8 @@ func (vars *Vars) ReverseMerge(other *Vars, include *Include) {
 		return
 	}
 
-	newOM := orderedmap.NewOrderedMap[string, Var]()
-
 	other.mutex.RLock()
+	newOM := orderedmap.NewOrderedMapWithCapacity[string, Var](other.om.Len())
 	for pair := other.om.Front(); pair != nil; pair = pair.Next() {
 		val := pair.Value
 		if include != nil && include.AdvancedImport {

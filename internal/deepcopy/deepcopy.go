@@ -53,7 +53,7 @@ func OrderedMap[K comparable, V any](orig *orderedmap.OrderedMap[K, V]) *ordered
 	if orig.Len() == 0 {
 		return orderedmap.NewOrderedMap[K, V]()
 	}
-	c := orderedmap.NewOrderedMap[K, V]()
+	c := orderedmap.NewOrderedMapWithCapacity[K, V](orig.Len())
 	for pair := orig.Front(); pair != nil; pair = pair.Next() {
 		if copyable, ok := any(pair.Value).(Copier[V]); ok {
 			c.Set(pair.Key, copyable.DeepCopy())

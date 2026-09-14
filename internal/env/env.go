@@ -17,21 +17,29 @@ const taskVarPrefix = "TASK_"
 func GetEnviron() *ast.Vars {
 	m := ast.NewVars()
 	for _, e := range os.Environ() {
-		keyVal := strings.SplitN(e, "=", 2)
-		key, val := keyVal[0], keyVal[1]
+		key, val, found := strings.Cut(e, "=")
+		if !found {
+			continue // Skip malformed env variables if any exist
+		}
 		m.Set(key, ast.Var{Value: val})
 	}
 	return m
 }
 
 func GetFromVars(vars *ast.Vars) []string {
-	environ := []string{}
-	for k, v := range vars.ToCacheMap() {
-		if !isTypeAllowed(v) {
+	environ := make([]string, 0, vars.Len())
+
+	for k, v := range vars.All() {
+		actualVal := v.Value
+		if v.Live != nil {
+			actualVal = v.Live
+		}
+		if !isTypeAllowed(actualVal) {
 			continue
 		}
-		environ = append(environ, fmt.Sprintf("%s=%v", k, v))
+		environ = append(environ, k+"="+fmt.Sprint(actualVal))
 	}
+
 	return environ
 }
 
