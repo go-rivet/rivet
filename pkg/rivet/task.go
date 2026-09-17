@@ -146,10 +146,11 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 	}
 
 	// Inject prompted vars into call if available
-	if e.promptedVars != nil {
+	if e.promptedVars != nil && e.promptedVars.Len() > 0 {
 		if call.Vars == nil {
-			call.Vars = ast.NewVars()
+			call.Vars = ast.NewVarsWithCapacity(e.promptedVars.Len())
 		}
+
 		for name, v := range e.promptedVars.All() {
 			// Only inject if not already set in call
 			if _, ok := call.Vars.Get(name); !ok {
@@ -586,7 +587,7 @@ func (e *Executor) GetTask(call *Call) (*ast.Task, error) {
 
 	if len(matchingTasks) > 0 {
 		if call.Vars == nil {
-			call.Vars = ast.NewVars()
+			call.Vars = ast.NewVarsWithCapacity(1)
 		}
 		call.Vars.Set("MATCH", ast.Var{Value: matchingTasks[0].Wildcards})
 		return matchingTasks[0].Task, nil

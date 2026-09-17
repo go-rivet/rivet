@@ -37,7 +37,7 @@ ifeq ($(GOBIN),)
 GOBIN=$(GOPATH)/bin
 endif
 
-.PHONY: all build clean run release test test-all generate generate-fixtures mod lint install help $(PLATFORMS)
+.PHONY: all build clean run release test test-all bench generate generate-fixtures mod lint install help $(PLATFORMS)
 
 # Default target runs help to guide the user
 all: help
@@ -76,6 +76,25 @@ test:
 test-all:
 	@echo "Running tests..."
 	go test -v -race ./... -tags 'signals watch'
+
+## bench: Run benchmarks with per-case CPU profiling (see ./bench_profiles)
+BENCH_DIR = bench_profiles
+BENCH      ?= .
+bench:
+	@echo "Running benchmarks..."
+	@mkdir -p $(BENCH_DIR)
+	@rm -f $(BENCH_DIR)/*.out
+	RIVET_BENCH_PROFILE_DIR=$(abspath $(BENCH_DIR)) go test ./cmd/rivet/... \
+		-run='^$$' \
+		-bench='$(BENCH)' \
+		-benchmem
+	@echo ""
+	@echo "Profiles written to $(BENCH_DIR)/:"
+	@ls -1 $(BENCH_DIR)/*_cpu.out $(BENCH_DIR)/*_mem.out 2>/dev/null | sed 's/^/  /' || echo "  (none found)"
+	@echo ""
+	@echo "View a profile as a flame graph with:"
+	@echo "  go tool pprof -http=:8080 $(BENCH_DIR)/print_message_cpu.out"
+	@echo "  go tool pprof -alloc_space  -http=:8080 bench_profiles/print_message_mem.out"
 
 ## test-e2e: Run E2E tests (from ../rivet-e2e/catalog)
 

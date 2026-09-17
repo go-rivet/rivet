@@ -105,7 +105,20 @@ func (c *Compiler) mergeVars(ctx context.Context, dest *ast.Vars, source *ast.Va
 }
 
 func (c *Compiler) getVariables(ctx context.Context, t *ast.Task, call *Call, evaluateShVars bool) (*ast.Vars, error) {
-	result := ast.NewVars()
+	initialCapacity := env.GetEnviron().Len() + 10 + 5 // +specialvars
+
+	// Add sizing hints if task context is present
+	if t != nil {
+		initialCapacity += t.Vars.Len()
+		if t.IncludeVars != nil {
+			initialCapacity += t.IncludeVars.Len()
+		}
+	}
+	if call != nil && call.Vars != nil {
+		initialCapacity += call.Vars.Len()
+	}
+
+	result := ast.NewVarsWithCapacity(initialCapacity)
 	taskdir := ""
 	taskOnly := (t != nil)
 	taskCall := (t != nil && call != nil)
@@ -228,36 +241,37 @@ func (c *Compiler) ResetCache() {
 }
 
 func (c *Compiler) getSpecialVars(t *ast.Task, call *Call) *ast.Vars {
+	vars := ast.NewVarsWithCapacity(10 + 4)
+
+	// Base system variables
 	// Use filepath.ToSlash for all paths to ensure consistent forward slashes
 	// across platforms. This prevents issues with backslashes being interpreted
 	// as escape sequences when paths are used in shell commands on Windows.
-	allVars := map[string]string{
-		"TASK_EXE":         filepath.ToSlash(os.Args[0]),
-		"ROOT_TASKFILE":    filepathext.SmartJoin(c.RootDir, c.Entrypoint),
-		"ROOT_DIR":         c.RootDir,
-		"USER_WORKING_DIR": c.UserWorkingDir,
-		"TASK_VERSION":     version.GetVersion(),
-	}
+	vars.Set("TASK_EXE", ast.Var{Value: filepath.ToSlash(os.Args[0])})
+	vars.Set("ROOT_TASKFILE", ast.Var{Value: filepathext.SmartJoin(c.RootDir, c.Entrypoint)})
+	vars.Set("ROOT_DIR", ast.Var{Value: c.RootDir})
+	vars.Set("USER_WORKING_DIR", ast.Var{Value: c.UserWorkingDir})
+	vars.Set("TASK_VERSION", ast.Var{Value: version.GetVersion()})
+
+	// Task-specific contextual variables
 	if t != nil {
-		allVars["TASK"] = t.Task
-		allVars["TASK_DIR"] = filepath.ToSlash(filepathext.SmartJoin(c.Dir, t.Dir))
-		allVars["TASKFILE"] = filepath.ToSlash(t.Location.Taskfile)
-		allVars["TASKFILE_DIR"] = filepath.ToSlash(filepath.Dir(t.Location.Taskfile))
+		vars.Set("TASK", ast.Var{Value: t.Task})
+		vars.Set("TASK_DIR", ast.Var{Value: filepath.ToSlash(filepathext.SmartJoin(c.Dir, t.Dir))})
+		vars.Set("TASKFILE", ast.Var{Value: filepath.ToSlash(t.Location.Taskfile)})
+		vars.Set("TASKFILE_DIR", ast.Var{Value: filepath.ToSlash(filepath.Dir(t.Location.Taskfile))})
 	} else {
-		allVars["TASK"] = ""
-		allVars["TASK_DIR"] = ""
-		allVars["TASKFILE"] = ""
-		allVars["TASKFILE_DIR"] = ""
-	}
-	if call != nil {
-		allVars["ALIAS"] = call.Task
-	} else {
-		allVars["ALIAS"] = ""
+		vars.Set("TASK", ast.Var{Value: ""})
+		vars.Set("TASK_DIR", ast.Var{Value: ""})
+		vars.Set("TASKFILE", ast.Var{Value: ""})
+		vars.Set("TASKFILE_DIR", ast.Var{Value: ""})
 	}
 
-	vars := ast.NewVars()
-	for k, v := range allVars {
-		vars.Set(k, ast.Var{Value: v})
+	// Invocation alias context
+	if call != nil {
+		vars.Set("ALIAS", ast.Var{Value: call.Task})
+	} else {
+		vars.Set("ALIAS", ast.Var{Value: ""})
 	}
+
 	return vars
 }

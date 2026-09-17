@@ -3,7 +3,7 @@ package deepcopy
 import (
 	"reflect"
 
-	"github.com/elliotchance/orderedmap/v3"
+	"github.com/go-rivet/rivet/internal/orderedmap"
 )
 
 type Copier[T any] interface {
@@ -50,17 +50,25 @@ func Map[K comparable, V any](orig map[K]V) map[K]V {
 }
 
 func OrderedMap[K comparable, V any](orig *orderedmap.OrderedMap[K, V]) *orderedmap.OrderedMap[K, V] {
-	if orig.Len() == 0 {
+	if orig == nil || orig.Len() == 0 {
 		return orderedmap.NewOrderedMap[K, V]()
 	}
-	c := orderedmap.NewOrderedMap[K, V]()
-	for pair := orig.Front(); pair != nil; pair = pair.Next() {
-		if copyable, ok := any(pair.Value).(Copier[V]); ok {
-			c.Set(pair.Key, copyable.DeepCopy())
-		} else {
-			c.Set(pair.Key, pair.Value)
-		}
+
+	var zero V
+	_, isCopier := any(zero).(Copier[V])
+
+	// FAST PATH: Pure Blit Copy.
+	if !isCopier {
+		return orig.Copy()
 	}
+
+	// SLOW PATH: Deep Copy fallback for actual nested objects
+	c := orderedmap.NewOrderedMapWithCapacity[K, V](orig.Len())
+	orig.ForEach(func(key K, val V) bool {
+		copyable := any(val).(Copier[V])
+		c.Set(key, copyable.DeepCopy())
+		return true
+	})
 	return c
 }
 

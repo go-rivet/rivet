@@ -5,7 +5,6 @@ go 1.26.0
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/dominikbraun/graph v0.23.0
-	github.com/elliotchance/orderedmap/v3 v3.1.1
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.12.1

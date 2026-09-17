@@ -48,7 +48,7 @@ func (t1 *Taskfile) Merge(t2 *Taskfile, include *Include) error {
 		t1.Includes = NewIncludes()
 	}
 	if t1.Vars == nil {
-		t1.Vars = NewVars()
+		t1.Vars = NewVarsWithCapacity(t2.Vars.Len())
 	}
 	if t1.Tasks == nil {
 		t1.Tasks = NewTasks()

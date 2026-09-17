@@ -8,6 +8,7 @@ import (
 	"maps"
 	"regexp"
 	"strings"
+	"sync"
 
 	"text/template"
 
@@ -18,6 +19,36 @@ import (
 )
 
 var funcs = template.FuncMap{}
+
+// lookupRe matches a lone '{{ ... }}' expression, used by resolveDirectLookup.
+// Compiled once since regexp.MustCompile is expensive to run per call.
+var lookupRe = regexp.MustCompile(`^\{\{(.+)\}\}$`)
+
+// templateCache holds parsed templates keyed by their source text, avoiding
+// re-parsing (which allocates a lexer/AST) for strings seen more than once,
+// e.g. the same command template rendered for each item in a loop.
+var templateCache sync.Map // map[string]*template.Template
+
+// bufPool reuses bytes.Buffers across template executions to cut down on
+// per-call allocations.
+var bufPool = sync.Pool{
+	New: func() any { return new(bytes.Buffer) },
+}
+
+// parseTemplate returns a cached *template.Template for s, parsing and
+// caching it on first use.
+func parseTemplate(s string) (*template.Template, error) {
+	if t, ok := templateCache.Load(s); ok {
+		return t.(*template.Template), nil
+	}
+	tpl, err := template.New("").Funcs(funcs).Parse(s)
+	if err != nil {
+		return nil, err
+	}
+	// If another goroutine raced us, keep whichever was stored first.
+	actual, _ := templateCache.LoadOrStore(s, tpl)
+	return actual.(*template.Template), nil
+}
 
 func init() {
 	maps.Copy(funcs, sprig.SprigFuncs)
@@ -65,13 +96,9 @@ func ResolveRef(ref string, cache *Cache) any {
 	// Variable to intercept and store the actual typed value
 	var resolvedValue any
 
-	// Create a local function map combining global funcs and our interceptor
-	localFuncs := make(template.FuncMap)
-	maps.Copy(localFuncs, funcs)
-
 	// The "resolve" function captures the argument and returns an empty string
 	// so it doesn't mess up standard template execution outputs.
-	localFuncs["resolve"] = func(v any) string {
+	resolve := func(v any) string {
 		resolvedValue = v
 		return ""
 	}
@@ -79,7 +106,10 @@ func ResolveRef(ref string, cache *Cache) any {
 	// Wrap the user's reference inside our interceptor function: {{resolve (ref)}}
 	tmplString := fmt.Sprintf("{{resolve (%s)}}", ref)
 
-	t, err := template.New("resolver").Funcs(localFuncs).Parse(tmplString)
+	// Register the global funcs first, then layer the single-entry closure map
+	// on top; this avoids copying the whole global funcs map into a throwaway
+	// map on every call.
+	t, err := template.New("resolver").Funcs(funcs).Funcs(template.FuncMap{"resolve": resolve}).Parse(tmplString)
 	if err != nil {
 		cache.err = err
 		return nil
@@ -87,8 +117,10 @@ func ResolveRef(ref string, cache *Cache) any {
 
 	// Execute the template into a discard buffer.
 	// This forces the template to evaluate, triggers our function, and populates resolvedValue.
-	var discard bytes.Buffer
-	err = t.Execute(&discard, cache.cacheMap)
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+	err = t.Execute(buf, cache.cacheMap)
 	if err != nil {
 		cache.err = err
 		return nil
@@ -110,8 +142,7 @@ func resolveDirectLookup(text string, cache *Cache) any {
 
 	// Lookup should be in the form '{{.LOOKUP}}'.
 	// Captures everything inside the brackets so we can rewrite it.
-	re := regexp.MustCompile(`^\{\{(.+)\}\}$`)
-	match := re.FindStringSubmatch(text)
+	match := lookupRe.FindStringSubmatch(text)
 	if len(match) != 2 {
 		return text
 	}
@@ -120,10 +151,7 @@ func resolveDirectLookup(text string, cache *Cache) any {
 	// Variable to intercept and store the actual typed value
 	var resolvedValue any
 
-	// Create a local function map combining global funcs and our interceptor
-	localFuncs := make(template.FuncMap)
-	maps.Copy(localFuncs, funcs)
-	localFuncs["resolve"] = func(v any) string {
+	resolve := func(v any) string {
 		resolvedValue = v
 		return ""
 	}
@@ -131,15 +159,20 @@ func resolveDirectLookup(text string, cache *Cache) any {
 	// Wrap the inner expression: {{resolve (.LOOKUP)}}
 	tmplString := fmt.Sprintf("{{resolve (%s)}}", innerRef)
 
-	t, err := template.New("resolver").Funcs(localFuncs).Parse(tmplString)
+	// Register the global funcs first, then layer the single-entry closure map
+	// on top; this avoids copying the whole global funcs map into a throwaway
+	// map on every call.
+	t, err := template.New("resolver").Funcs(funcs).Funcs(template.FuncMap{"resolve": resolve}).Parse(tmplString)
 	if err != nil {
 		cache.err = err
 		return nil
 	}
 
 	// Execute the template to trigger the function evaluation
-	var discard bytes.Buffer
-	err = t.Execute(&discard, cache.cacheMap)
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+	err = t.Execute(buf, cache.cacheMap)
 	if err != nil {
 		cache.err = err
 		return nil
@@ -158,41 +191,59 @@ func ReplaceWithExtra[T any](v T, cache *Cache, extra map[string]any) T {
 		return v
 	}
 
-	// Optimization: skip if string is not a template
+	// Optimization: If it's a plain string with no templates, exit immediately.
+	// No map initialization, no deepcopy traversal overhead.
 	if s, ok := any(v).(string); ok {
 		if !strings.Contains(s, "{{") {
 			return v
 		}
 	}
 
-	// Initialize the cache map if it's not already initialized
-	if cache.cacheMap == nil {
-		cache.cacheMap = cache.Vars.ToCacheMap()
-	}
+	// DEFERRED INITIALIZATION STATE:
+	// We do NOT call ToCacheMap or maps.Clone here. We wait until we are certain
+	// that a template string actually exists deeper within the structure.
+	var data map[string]any
+	var initialized bool
 
-	// Create a copy of the cache map to avoid editing the original
-	// If there is extra data, merge it with the cache map
-	data := maps.Clone(cache.cacheMap)
-	if extra != nil {
-		maps.Copy(data, extra)
-	}
-
-	// Traverse the value and parse any template variables
-	copy, err := deepcopy.TraverseStringsFunc(v, func(v string) (string, error) {
-		// Optimization: skip if string is not a template
-		if !strings.Contains(v, "{{") {
-			return v, nil
+	// Traverse structural or complex types (like slices, structs, pointers)
+	copy, err := deepcopy.TraverseStringsFunc(v, func(str string) (string, error) {
+		// If an individual string inside the structure isn't a template, skip it.
+		// This keeps static, structural strings completely allocation-free!
+		if !strings.Contains(str, "{{") {
+			return str, nil
 		}
-		tpl, err := template.New("").Funcs(funcs).Parse(v)
+
+		// LAZY ON-DEMAND INITIALIZATION:
+		// Triggered only on the very first text fragment that needs rendering.
+		if !initialized {
+			if cache.cacheMap == nil {
+				cache.cacheMap = cache.Vars.ToCacheMap()
+			}
+
+			if len(extra) > 0 {
+				data = maps.Clone(cache.cacheMap)
+				maps.Copy(data, extra)
+			} else {
+				data = cache.cacheMap
+			}
+			initialized = true
+		}
+
+		tpl, err := parseTemplate(str)
 		if err != nil {
-			return v, err
+			return str, err
 		}
-		var b bytes.Buffer
-		if err := tpl.Execute(&b, data); err != nil {
-			return v, err
+
+		buf := bufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		defer bufPool.Put(buf)
+
+		if err := tpl.Execute(buf, data); err != nil {
+			return str, err
 		}
-		return strings.ReplaceAll(b.String(), "<no value>", ""), nil
+		return strings.ReplaceAll(buf.String(), "<no value>", ""), nil
 	})
+
 	if err != nil {
 		cache.err = err
 		return v
@@ -206,51 +257,75 @@ func ReplaceGlobs(globs []*ast.Glob, cache *Cache) []*ast.Glob {
 		return nil
 	}
 
-	new := []*ast.Glob{}
+	// Optimize baseline memory layout: allocate matching capacity to prevent resize loops
+	result := make([]*ast.Glob, 0, len(globs))
+
 	for _, g := range globs {
+		if cache.err != nil {
+			return nil
+		}
+
 		_glob := resolveDirectLookup(g.Glob, cache)
 		switch glob := _glob.(type) {
-		case []any:
-			for _, v := range glob {
-				new = append(new, &ast.Glob{
-					Glob:   Replace(v.(string), cache),
-					Negate: g.Negate,
-				})
-			}
 		case string:
-			glob = Replace(glob, cache)
+			// If resolveDirectLookup didn't modify it, check if it contains a template
+			// or simply forward it to the JSON interpreter directly.
+			if strings.Contains(glob, "{{") {
+				glob = Replace(glob, cache)
+			}
+
 			var jv any
 			if err := json.Unmarshal([]byte(glob), &jv); err == nil {
-				// JSON data (highly probable).
 				switch val := jv.(type) {
 				case []any:
 					for _, v := range val {
-						new = append(new, &ast.Glob{
-							Glob:   v.(string),
-							Negate: g.Negate,
-						})
+						if s, ok := v.(string); ok {
+							result = append(result, &ast.Glob{
+								Glob:   s,
+								Negate: g.Negate,
+							})
+						}
 					}
 				case string:
-					new = append(new, &ast.Glob{
+					result = append(result, &ast.Glob{
 						Glob:   val,
 						Negate: g.Negate,
 					})
 				}
 			} else {
-				// Otherwise take the glob as provided.
-				new = append(new, &ast.Glob{
+				result = append(result, &ast.Glob{
 					Glob:   glob,
 					Negate: g.Negate,
 				})
 			}
+
+		case []any:
+			for _, v := range glob {
+				if s, ok := v.(string); ok {
+					result = append(result, &ast.Glob{
+						Glob:   Replace(s, cache),
+						Negate: g.Negate,
+					})
+				}
+			}
+
 		default:
-			new = append(new, &ast.Glob{
-				Glob:   Replace(glob.(string), cache),
-				Negate: g.Negate,
-			})
+			// Defensive typing: safely evaluate type conversions instead of direct panicking assertions
+			if str, ok := glob.(string); ok {
+				result = append(result, &ast.Glob{
+					Glob:   Replace(str, cache),
+					Negate: g.Negate,
+				})
+			} else {
+				// Fallback string conversion for primitive values (int, bool)
+				result = append(result, &ast.Glob{
+					Glob:   Replace(fmt.Sprint(glob), cache),
+					Negate: g.Negate,
+				})
+			}
 		}
 	}
-	return new
+	return result
 }
 
 func ReplaceVar(v ast.Var, cache *Cache) ast.Var {
@@ -279,7 +354,7 @@ func ReplaceVarsWithExtra(vars *ast.Vars, cache *Cache, extra map[string]any) *a
 		return nil
 	}
 
-	newVars := ast.NewVars()
+	newVars := ast.NewVarsWithCapacity(vars.Len())
 	for k, v := range vars.All() {
 		newVars.Set(k, ReplaceVarWithExtra(v, cache, extra))
 	}

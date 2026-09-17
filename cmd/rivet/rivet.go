@@ -265,7 +265,7 @@ func (o *flagsOption) ApplyToExecutor(e *task.Executor) {
 }
 
 func specialVars(cliArgsPreDash []string, cliArgsPostDash []string) *ast.Vars {
-	vars := ast.NewVars()
+	vars := ast.NewVarsWithCapacity(5)
 
 	cliArgsPostDashQuoted, err := args.ToQuotedString(cliArgsPostDash)
 	if err != nil {

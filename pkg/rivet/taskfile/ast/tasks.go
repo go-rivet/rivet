@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/elliotchance/orderedmap/v3"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/go-rivet/rivet/internal/filepathext"
+	"github.com/go-rivet/rivet/internal/orderedmap"
 	"github.com/go-rivet/rivet/internal/sort"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 )
@@ -43,8 +43,8 @@ func (tasks *Tasks) Len() int {
 	if tasks == nil || tasks.om == nil {
 		return 0
 	}
-	defer tasks.mutex.RUnlock()
 	tasks.mutex.RLock()
+	defer tasks.mutex.RUnlock()
 	return tasks.om.Len()
 }
 
@@ -55,8 +55,8 @@ func (tasks *Tasks) Get(key string) (*Task, bool) {
 	if tasks == nil || tasks.om == nil {
 		return &Task{}, false
 	}
-	defer tasks.mutex.RUnlock()
 	tasks.mutex.RLock()
+	defer tasks.mutex.RUnlock()
 	return tasks.om.Get(key)
 }
 
@@ -70,8 +70,8 @@ func (tasks *Tasks) Set(key string, value *Task) bool {
 	if tasks.om == nil {
 		tasks.om = orderedmap.NewOrderedMap[string, *Task]()
 	}
-	defer tasks.mutex.Unlock()
 	tasks.mutex.Lock()
+	defer tasks.mutex.Unlock()
 	return tasks.om.Set(key, value)
 }
 
@@ -82,13 +82,15 @@ func (t *Tasks) All(sorter sort.Sorter) iter.Seq2[string, *Task] {
 		return func(yield func(string, *Task) bool) {}
 	}
 	if sorter == nil {
-		return t.om.AllFromFront()
+		return t.om.All()
 	}
 	return func(yield func(string, *Task) bool) {
-		for _, key := range sorter(slices.Collect(t.om.Keys()), nil) {
-			el := t.om.GetElement(key)
-			if !yield(el.Key, el.Value) {
-				return
+		sortedKeys := sorter(slices.Collect(t.om.Keys()), nil)
+		for _, key := range sortedKeys {
+			if val, ok := t.om.Get(key); ok {
+				if !yield(key, val) {
+					return
+				}
 			}
 		}
 	}
