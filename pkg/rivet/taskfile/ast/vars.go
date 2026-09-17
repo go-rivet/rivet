@@ -34,6 +34,15 @@ func NewVars(els ...*VarElement) *Vars {
 	return vars
 }
 
+// NewVars creates a new instance of Vars and initializes it with the provided
+// set of elements, if any. The elements are added in the order they are passed.
+func NewVarsWithCapacity(capacity int) *Vars {
+	vars := &Vars{
+		om: orderedmap.NewOrderedMapWithCapacity[string, Var](10),
+	}
+	return vars
+}
+
 // Len returns the number of variables in the Vars map.
 func (vars *Vars) Len() int {
 	if vars == nil || vars.om == nil {

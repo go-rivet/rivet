@@ -1,10 +1,12 @@
 package env
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
@@ -12,18 +14,41 @@ import (
 
 const taskVarPrefix = "TASK_"
 
-// GetEnviron the all return all environment variables encapsulated on a
-// ast.Vars
+var (
+	baselineEnv     *ast.Vars
+	baselineEnvOnce sync.Once
+)
+
+// GetEnviron returns a fresh copy of the baseline environment variables.
 func GetEnviron() *ast.Vars {
-	m := ast.NewVars()
-	for _, e := range os.Environ() {
+	isBenchmark := false
+	if benchFlag := flag.Lookup("test.bench"); benchFlag != nil && benchFlag.Value.String() != "" {
+		isBenchmark = true
+	}
+
+	isStandardTest := flag.Lookup("test.v") != nil && !isBenchmark
+
+	if isStandardTest {
+		return buildEnvironSnapshot()
+	}
+
+	baselineEnvOnce.Do(func() {
+		baselineEnv = buildEnvironSnapshot()
+	})
+	return baselineEnv.DeepCopy()
+}
+
+func buildEnvironSnapshot() *ast.Vars {
+	rawEnv := os.Environ()
+	env := ast.NewVarsWithCapacity(len(rawEnv))
+	for _, e := range rawEnv {
 		key, val, found := strings.Cut(e, "=")
 		if !found {
-			continue // Skip malformed env variables if any exist
+			continue
 		}
-		m.Set(key, ast.Var{Value: val})
+		env.Set(key, ast.Var{Value: val})
 	}
-	return m
+	return env
 }
 
 func GetFromVars(vars *ast.Vars) []string {
@@ -37,7 +62,13 @@ func GetFromVars(vars *ast.Vars) []string {
 		if !isTypeAllowed(actualVal) {
 			continue
 		}
-		environ = append(environ, k+"="+fmt.Sprint(actualVal))
+		var strVal string
+		if s, ok := actualVal.(string); ok {
+			strVal = s
+		} else {
+			strVal = fmt.Sprint(actualVal)
+		}
+		environ = append(environ, k+"="+strVal)
 	}
 
 	return environ

@@ -199,31 +199,34 @@ func ReplaceWithExtra[T any](v T, cache *Cache, extra map[string]any) T {
 		}
 	}
 
-	// For all structural or complex types (like slices, structs, pointers),
-	// let deepcopy traverse them. We defer map creation until we find a string
-	// that actually needs rendering.
+	// DEFERRED INITIALIZATION STATE:
+	// We do NOT call ToCacheMap or maps.Clone here. We wait until we are certain
+	// that a template string actually exists deeper within the structure.
 	var data map[string]any
+	var initialized bool
 
+	// Traverse structural or complex types (like slices, structs, pointers)
 	copy, err := deepcopy.TraverseStringsFunc(v, func(str string) (string, error) {
 		// If an individual string inside the structure isn't a template, skip it.
+		// This keeps static, structural strings completely allocation-free!
 		if !strings.Contains(str, "{{") {
 			return str, nil
 		}
 
-		// LAZY INITIALIZATION: We found a template! Only initialize the map now.
-		if cache.cacheMap == nil {
-			cache.cacheMap = cache.Vars.ToCacheMap()
-		}
+		// LAZY ON-DEMAND INITIALIZATION:
+		// Triggered only on the very first text fragment that needs rendering.
+		if !initialized {
+			if cache.cacheMap == nil {
+				cache.cacheMap = cache.Vars.ToCacheMap()
+			}
 
-		// Prepare the data map context only on the first template found in this call
-		if data == nil {
 			if len(extra) > 0 {
-				data = make(map[string]any, len(cache.cacheMap)+len(extra))
-				maps.Copy(data, cache.cacheMap)
+				data = maps.Clone(cache.cacheMap)
 				maps.Copy(data, extra)
 			} else {
 				data = cache.cacheMap
 			}
+			initialized = true
 		}
 
 		tpl, err := parseTemplate(str)
@@ -240,6 +243,7 @@ func ReplaceWithExtra[T any](v T, cache *Cache, extra map[string]any) T {
 		}
 		return strings.ReplaceAll(buf.String(), "<no value>", ""), nil
 	})
+
 	if err != nil {
 		cache.err = err
 		return v
@@ -253,51 +257,75 @@ func ReplaceGlobs(globs []*ast.Glob, cache *Cache) []*ast.Glob {
 		return nil
 	}
 
-	new := []*ast.Glob{}
+	// Optimize baseline memory layout: allocate matching capacity to prevent resize loops
+	result := make([]*ast.Glob, 0, len(globs))
+
 	for _, g := range globs {
+		if cache.err != nil {
+			return nil
+		}
+
 		_glob := resolveDirectLookup(g.Glob, cache)
 		switch glob := _glob.(type) {
-		case []any:
-			for _, v := range glob {
-				new = append(new, &ast.Glob{
-					Glob:   Replace(v.(string), cache),
-					Negate: g.Negate,
-				})
-			}
 		case string:
-			glob = Replace(glob, cache)
+			// If resolveDirectLookup didn't modify it, check if it contains a template
+			// or simply forward it to the JSON interpreter directly.
+			if strings.Contains(glob, "{{") {
+				glob = Replace(glob, cache)
+			}
+
 			var jv any
 			if err := json.Unmarshal([]byte(glob), &jv); err == nil {
-				// JSON data (highly probable).
 				switch val := jv.(type) {
 				case []any:
 					for _, v := range val {
-						new = append(new, &ast.Glob{
-							Glob:   v.(string),
-							Negate: g.Negate,
-						})
+						if s, ok := v.(string); ok {
+							result = append(result, &ast.Glob{
+								Glob:   s,
+								Negate: g.Negate,
+							})
+						}
 					}
 				case string:
-					new = append(new, &ast.Glob{
+					result = append(result, &ast.Glob{
 						Glob:   val,
 						Negate: g.Negate,
 					})
 				}
 			} else {
-				// Otherwise take the glob as provided.
-				new = append(new, &ast.Glob{
+				result = append(result, &ast.Glob{
 					Glob:   glob,
 					Negate: g.Negate,
 				})
 			}
+
+		case []any:
+			for _, v := range glob {
+				if s, ok := v.(string); ok {
+					result = append(result, &ast.Glob{
+						Glob:   Replace(s, cache),
+						Negate: g.Negate,
+					})
+				}
+			}
+
 		default:
-			new = append(new, &ast.Glob{
-				Glob:   Replace(glob.(string), cache),
-				Negate: g.Negate,
-			})
+			// Defensive typing: safely evaluate type conversions instead of direct panicking assertions
+			if str, ok := glob.(string); ok {
+				result = append(result, &ast.Glob{
+					Glob:   Replace(str, cache),
+					Negate: g.Negate,
+				})
+			} else {
+				// Fallback string conversion for primitive values (int, bool)
+				result = append(result, &ast.Glob{
+					Glob:   Replace(fmt.Sprint(glob), cache),
+					Negate: g.Negate,
+				})
+			}
 		}
 	}
-	return new
+	return result
 }
 
 func ReplaceVar(v ast.Var, cache *Cache) ast.Var {
@@ -326,7 +354,7 @@ func ReplaceVarsWithExtra(vars *ast.Vars, cache *Cache, extra map[string]any) *a
 		return nil
 	}
 
-	newVars := ast.NewVars()
+	newVars := ast.NewVarsWithCapacity(vars.Len())
 	for k, v := range vars.All() {
 		newVars.Set(k, ReplaceVarWithExtra(v, cache, extra))
 	}

@@ -10,8 +10,9 @@ import (
 
 // Parse parses command line argument: tasks and global variables
 func Parse(args ...string) ([]*task.Call, *ast.Vars) {
-	calls := []*task.Call{}
-	globals := ast.NewVars()
+	// Pre-allocate matching the maximum possible number of elements
+	calls := make([]*task.Call, 0, len(args))
+	globals := ast.NewVarsWithCapacity(len(args))
 
 	for _, arg := range args {
 		if !strings.Contains(arg, "=") {

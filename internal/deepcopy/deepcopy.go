@@ -50,17 +50,24 @@ func Map[K comparable, V any](orig map[K]V) map[K]V {
 }
 
 func OrderedMap[K comparable, V any](orig *orderedmap.OrderedMap[K, V]) *orderedmap.OrderedMap[K, V] {
-	if orig.Len() == 0 {
+	if orig == nil || orig.Len() == 0 {
 		return orderedmap.NewOrderedMap[K, V]()
 	}
+
+	var zero V
+	_, isCopier := any(zero).(Copier[V])
+
+	// FAST PATH: Pure Blit Copy.
+	if !isCopier {
+		return orig.Copy()
+	}
+
+	// SLOW PATH: Deep Copy fallback for actual nested objects
 	c := orderedmap.NewOrderedMapWithCapacity[K, V](orig.Len())
 	orig.ForEach(func(key K, val V) bool {
-		if copyable, ok := any(val).(Copier[V]); ok {
-			c.Set(key, copyable.DeepCopy())
-		} else {
-			c.Set(key, val)
-		}
-		return true // Continue iteration
+		copyable := any(val).(Copier[V])
+		c.Set(key, copyable.DeepCopy())
+		return true
 	})
 	return c
 }
