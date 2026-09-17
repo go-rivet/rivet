@@ -76,7 +76,7 @@ func BenchmarkRivet(b *testing.B) {
 				if err != nil {
 					b.Fatalf("create profile file: %v", err)
 				}
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				if err := pprof.StartCPUProfile(f); err != nil {
 					b.Fatalf("start cpu profile: %v", err)
 				}
@@ -130,7 +130,7 @@ func writeHeapProfile(b *testing.B, path string) {
 	if err != nil {
 		b.Fatalf("create mem profile file: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	runtime.GC()
 	if err := pprof.WriteHeapProfile(f); err != nil {
 		b.Fatalf("write mem profile: %v", err)
