@@ -4,10 +4,10 @@ import (
 	"iter"
 	"sync"
 
-	"github.com/elliotchance/orderedmap/v3"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/go-rivet/rivet/internal/deepcopy"
+	"github.com/go-rivet/rivet/internal/orderedmap"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 )
 
@@ -94,7 +94,7 @@ func (includes *Includes) All() iter.Seq2[string, *Include] {
 	if includes == nil || includes.om == nil {
 		return func(yield func(string, *Include) bool) {}
 	}
-	return includes.om.AllFromFront()
+	return includes.om.All()
 }
 
 // Keys returns an iterator that loops over all task keys.

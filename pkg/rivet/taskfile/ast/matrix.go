@@ -3,10 +3,10 @@ package ast
 import (
 	"iter"
 
-	"github.com/elliotchance/orderedmap/v3"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/go-rivet/rivet/internal/deepcopy"
+	"github.com/go-rivet/rivet/internal/orderedmap"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 )
 
@@ -65,7 +65,7 @@ func (matrix *Matrix) All() iter.Seq2[string, *MatrixRow] {
 	if matrix == nil || matrix.om == nil {
 		return func(yield func(string, *MatrixRow) bool) {}
 	}
-	return matrix.om.AllFromFront()
+	return matrix.om.All()
 }
 
 // Keys returns an iterator that loops over all task keys.

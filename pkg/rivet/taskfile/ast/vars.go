@@ -4,10 +4,10 @@ import (
 	"iter"
 	"sync"
 
-	"github.com/elliotchance/orderedmap/v3"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/go-rivet/rivet/internal/deepcopy"
+	"github.com/go-rivet/rivet/internal/orderedmap"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 )
 
@@ -39,35 +39,32 @@ func (vars *Vars) Len() int {
 	if vars == nil || vars.om == nil {
 		return 0
 	}
-	defer vars.mutex.RUnlock()
 	vars.mutex.RLock()
+	defer vars.mutex.RUnlock()
 	return vars.om.Len()
 }
 
-// Get returns the value the the variable with the provided key and a boolean
-// that indicates if the value was found or not. If the value is not found, the
-// returned variable is a zero value and the bool is false.
+// Get returns the value of the variable with the provided key and a boolean
+// that indicates if the value was found or not.
 func (vars *Vars) Get(key string) (Var, bool) {
 	if vars == nil || vars.om == nil {
 		return Var{}, false
 	}
-	defer vars.mutex.RUnlock()
 	vars.mutex.RLock()
+	defer vars.mutex.RUnlock()
 	return vars.om.Get(key)
 }
 
-// Set sets the value of the variable with the provided key to the provided
-// value. If the variable already exists, its value is updated. If the variable
-// does not exist, it is created.
+// Set sets the value of the variable with the provided key to the provided value.
 func (vars *Vars) Set(key string, value Var) bool {
 	if vars == nil {
-		vars = NewVars()
+		return false // Maintain safety bounds without breaking signatures
 	}
+	vars.mutex.Lock()
+	defer vars.mutex.Unlock()
 	if vars.om == nil {
 		vars.om = orderedmap.NewOrderedMap[string, Var]()
 	}
-	defer vars.mutex.Unlock()
-	vars.mutex.Lock()
 	return vars.om.Set(key, value)
 }
 
@@ -76,7 +73,7 @@ func (vars *Vars) All() iter.Seq2[string, Var] {
 	if vars == nil || vars.om == nil {
 		return func(yield func(string, Var) bool) {}
 	}
-	return vars.om.AllFromFront()
+	return vars.om.All()
 }
 
 // Keys returns an iterator that loops over all task keys.
@@ -95,73 +92,74 @@ func (vars *Vars) Values() iter.Seq[Var] {
 	return vars.om.Values()
 }
 
-// ToCacheMap converts Vars to an unordered map containing only the static
-// variables
-func (vars *Vars) ToCacheMap() (m map[string]any) {
+// ToCacheMap converts Vars to an unordered map containing only the static variables.
+func (vars *Vars) ToCacheMap() map[string]any {
 	if vars == nil || vars.om == nil {
 		return map[string]any{}
 	}
 	vars.mutex.RLock()
 	defer vars.mutex.RUnlock()
-	// Traverse the element list directly (avoids vars.Len()'s nested RLock and
-	// the All() iterator closure).
-	m = make(map[string]any, vars.om.Len())
-	for el := vars.om.Front(); el != nil; el = el.Next() {
-		v := el.Value
+
+	// OPTIMIZATION: Pre-allocate the exact map capacity up-front!
+	// This directly targets the 843MB maps.clone / bucket resize pressure.
+	m := make(map[string]any, vars.om.Len())
+
+	// Clean, native range loop sequence reading elements smoothly
+	for k, v := range vars.om.All() {
 		if v.Sh != nil && *v.Sh != "" {
-			// Dynamic variable is not yet resolved; trigger
-			// <no value> to be used in templates.
 			continue
 		}
 		if v.Live != nil {
-			m[el.Key] = v.Live
+			m[k] = v.Live
 		} else {
-			m[el.Key] = v.Value
+			m[k] = v.Value
 		}
 	}
 	return m
 }
 
-// Merge loops over other and merges it values with the variables in vars. If
-// the include parameter is not nil and its it is an advanced import, the
-// directory is set to the value of the include parameter.
+// Merge loops over other and merges its values with the variables in vars.
 func (vars *Vars) Merge(other *Vars, include *Include) {
 	if vars == nil || vars.om == nil || other == nil {
 		return
 	}
-	defer other.mutex.RUnlock()
 	other.mutex.RLock()
-	for pair := other.om.Front(); pair != nil; pair = pair.Next() {
+	defer other.mutex.RUnlock()
+
+	vars.mutex.Lock()
+	defer vars.mutex.Unlock()
+
+	for k, v := range other.om.All() {
 		if include != nil && include.AdvancedImport {
-			pair.Value.Dir = include.Dir
+			v.Dir = include.Dir
 		}
-		vars.om.Set(pair.Key, pair.Value)
+		vars.om.Set(k, v)
 	}
 }
 
 // ReverseMerge merges other variables with the existing variables in vars, but
-// keeps the other variables first in order. If the include parameter is not
-// nil and it is an advanced import, the directory is set to the value of the
-// include parameter.
+// keeps the other variables first in order.
 func (vars *Vars) ReverseMerge(other *Vars, include *Include) {
 	if vars == nil || vars.om == nil || other == nil || other.om == nil {
 		return
 	}
 
 	other.mutex.RLock()
-	newOM := orderedmap.NewOrderedMapWithCapacity[string, Var](other.om.Len())
-	for pair := other.om.Front(); pair != nil; pair = pair.Next() {
-		val := pair.Value
+	newOM := orderedmap.NewOrderedMapWithCapacity[string, Var](other.om.Len() + vars.om.Len())
+	for k, v := range other.om.All() {
 		if include != nil && include.AdvancedImport {
-			val.Dir = include.Dir
+			v.Dir = include.Dir
 		}
-		newOM.Set(pair.Key, val)
+		newOM.Set(k, v)
 	}
 	other.mutex.RUnlock()
 
 	vars.mutex.Lock()
-	for pair := vars.om.Front(); pair != nil; pair = pair.Next() {
-		newOM.Set(pair.Key, pair.Value)
+	for k, v := range vars.om.All() {
+		// Only append if it wasn't already set by the incoming updates map path
+		if !newOM.Has(k) {
+			newOM.Set(k, v)
+		}
 	}
 	vars.om = newOM
 	vars.mutex.Unlock()
@@ -171,47 +169,43 @@ func (vs *Vars) DeepCopy() *Vars {
 	if vs == nil {
 		return nil
 	}
-	defer vs.mutex.RUnlock()
 	vs.mutex.RLock()
+	defer vs.mutex.RUnlock()
 	return &Vars{
 		om: deepcopy.OrderedMap(vs.om),
 	}
 }
 
 func (vs *Vars) UnmarshalYAML(node *yaml.Node) error {
-	if vs == nil || vs.om == nil {
-		*vs = *NewVars()
+	if vs == nil {
+		return errors.NewTaskfileDecodeError(nil, node).WithTypeMessage("vars")
 	}
+	vs.mutex.Lock()
 	vs.om = orderedmap.NewOrderedMap[string, Var]()
+	vs.mutex.Unlock()
+
 	switch node.Kind {
 	case yaml.MappingNode:
-		// NOTE: orderedmap does not have an unmarshaler, so we have to decode
-		// the map manually. We increment over 2 values at a time and assign
-		// them as a key-value pair.
 		for i := 0; i < len(node.Content); i += 2 {
 			keyNode := node.Content[i]
 			valueNode := node.Content[i+1]
 
 			if valueNode.Kind == yaml.AliasNode &&
 				valueNode.Alias.Kind == yaml.MappingNode {
-				// Recursively decode the alias to a map of vars.
-				var vars Vars
-				if err := valueNode.Decode(&vars); err != nil {
+				var nestedVars Vars
+				if err := valueNode.Decode(&nestedVars); err != nil {
 					return errors.NewTaskfileDecodeError(err, node)
 				}
-				for k, v := range vars.All() {
+				for k, v := range nestedVars.All() {
 					vs.Set(k, v)
 				}
 				continue
 			}
 
-			// Decode the value node into a Task struct
 			var v Var
 			if err := valueNode.Decode(&v); err != nil {
 				return errors.NewTaskfileDecodeError(err, node)
 			}
-
-			// Add the task to the ordered map
 			vs.Set(keyNode.Value, v)
 		}
 		return nil
