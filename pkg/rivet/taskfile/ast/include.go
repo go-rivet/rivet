@@ -120,25 +120,26 @@ func (includes *Includes) UnmarshalYAML(node *yaml.Node) error {
 	}
 	switch node.Kind {
 	case yaml.MappingNode:
-		// NOTE: orderedmap does not have an unmarshaler, so we have to decode
-		// the map manually. We increment over 2 values at a time and assign
-		// them as a key-value pair.
+		capacity := len(node.Content) / 2
+		localOM := orderedmap.NewOrderedMapWithCapacity[string, *Include](capacity)
+
 		for i := 0; i < len(node.Content); i += 2 {
 			keyNode := node.Content[i]
 			valueNode := node.Content[i+1]
 
-			// Decode the value node into an Include struct
-			var v Include
-			if err := valueNode.Decode(&v); err != nil {
+			v := &Include{
+				Namespace: keyNode.Value,
+			}
+			if err := valueNode.Decode(v); err != nil {
 				return errors.NewTaskfileDecodeError(err, node)
 			}
 
-			// Set the include namespace
-			v.Namespace = keyNode.Value
-
-			// Add the include to the ordered map
-			includes.Set(keyNode.Value, &v)
+			localOM.Set(keyNode.Value, v)
 		}
+
+		includes.mutex.Lock()
+		includes.om = localOM
+		includes.mutex.Unlock()
 		return nil
 	}
 
@@ -157,30 +158,32 @@ func (include *Include) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var includedTaskfile struct {
-			Taskfile string
-			Dir      string
-			Optional bool
-			Internal bool
-			Flatten  bool
-			Aliases  []string
-			Excludes []string
-			Vars     *Vars
-			Checksum string
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			switch keyNode.Value {
+			case "taskfile":
+				include.Taskfile = valNode.Value
+			case "dir":
+				include.Dir = valNode.Value
+			case "checksum":
+				include.Checksum = valNode.Value
+			case "optional":
+				_ = valNode.Decode(&include.Optional)
+			case "internal":
+				_ = valNode.Decode(&include.Internal)
+			case "flatten":
+				_ = valNode.Decode(&include.Flatten)
+			case "aliases":
+				_ = valNode.Decode(&include.Aliases)
+			case "excludes":
+				_ = valNode.Decode(&include.Excludes)
+			case "vars":
+				_ = valNode.Decode(&include.Vars)
+			}
 		}
-		if err := node.Decode(&includedTaskfile); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		include.Taskfile = includedTaskfile.Taskfile
-		include.Dir = includedTaskfile.Dir
-		include.Optional = includedTaskfile.Optional
-		include.Internal = includedTaskfile.Internal
-		include.Aliases = includedTaskfile.Aliases
-		include.Excludes = includedTaskfile.Excludes
 		include.AdvancedImport = true
-		include.Vars = includedTaskfile.Vars
-		include.Flatten = includedTaskfile.Flatten
-		include.Checksum = includedTaskfile.Checksum
 		return nil
 	}
 

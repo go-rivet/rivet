@@ -36,25 +36,28 @@ func (f *For) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var forStruct struct {
-			Matrix *Matrix
-			Var    string
-			Split  string
-			As     string
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			switch keyNode.Value {
+			case "matrix":
+				_ = valNode.Decode(&f.Matrix)
+			case "var":
+				f.Var = valNode.Value
+			case "split":
+				f.Split = valNode.Value
+			case "as":
+				f.As = valNode.Value
+			}
 		}
-		if err := node.Decode(&forStruct); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		if forStruct.Var == "" && forStruct.Matrix.Len() == 0 {
+
+		if f.Var == "" && f.Matrix.Len() == 0 {
 			return errors.NewTaskfileDecodeError(nil, node).WithMessage("invalid keys in for")
 		}
-		if forStruct.Var != "" && forStruct.Matrix.Len() != 0 {
+		if f.Var != "" && f.Matrix.Len() != 0 {
 			return errors.NewTaskfileDecodeError(nil, node).WithMessage("cannot use both var and matrix in for")
 		}
-		f.Matrix = forStruct.Matrix
-		f.Var = forStruct.Var
-		f.Split = forStruct.Split
-		f.As = forStruct.As
 		return nil
 	}
 

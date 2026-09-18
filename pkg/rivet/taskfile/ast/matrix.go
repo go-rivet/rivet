@@ -96,38 +96,37 @@ func (matrix *Matrix) DeepCopy() *Matrix {
 func (matrix *Matrix) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.MappingNode:
-		// NOTE: orderedmap does not have an unmarshaler, so we have to decode
-		// the map manually. We increment over 2 values at a time and assign
-		// them as a key-value pair.
+		capacity := len(node.Content) / 2
+		if matrix.om == nil {
+			matrix.om = orderedmap.NewOrderedMapWithCapacity[string, *MatrixRow](capacity)
+		}
+
 		for i := 0; i < len(node.Content); i += 2 {
 			keyNode := node.Content[i]
 			valueNode := node.Content[i+1]
 
 			switch valueNode.Kind {
 			case yaml.SequenceNode:
-				// Decode the value node into a Matrix struct
 				var v []any
 				if err := valueNode.Decode(&v); err != nil {
 					return errors.NewTaskfileDecodeError(err, node)
 				}
 
-				// Add the row to the ordered map
 				matrix.Set(keyNode.Value, &MatrixRow{
 					Value: v,
 				})
 
 			case yaml.MappingNode:
-				// Decode the value node into a Matrix struct
-				var refStruct struct {
-					Ref string
-				}
-				if err := valueNode.Decode(&refStruct); err != nil {
-					return errors.NewTaskfileDecodeError(err, node)
+				var refStr string
+				for j := 0; j < len(valueNode.Content); j += 2 {
+					if valueNode.Content[j].Value == "ref" {
+						refStr = valueNode.Content[j+1].Value
+						break
+					}
 				}
 
-				// Add the reference to the ordered map
 				matrix.Set(keyNode.Value, &MatrixRow{
-					Ref: refStruct.Ref,
+					Ref: refStr,
 				})
 
 			default:

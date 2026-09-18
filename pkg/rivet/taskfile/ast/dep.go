@@ -36,17 +36,19 @@ func (d *Dep) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var taskCall struct {
-			Task string
-			For  *For
-			Vars *Vars
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			switch keyNode.Value {
+			case "task":
+				d.Task = valNode.Value
+			case "for":
+				_ = valNode.Decode(&d.For)
+			case "vars":
+				_ = valNode.Decode(&d.Vars)
+			}
 		}
-		if err := node.Decode(&taskCall); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		d.Task = taskCall.Task
-		d.For = taskCall.For
-		d.Vars = taskCall.Vars
 		return nil
 	}
 

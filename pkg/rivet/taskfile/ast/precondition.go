@@ -24,7 +24,6 @@ func (p *Precondition) DeepCopy() *Precondition {
 	}
 }
 
-// UnmarshalYAML implements yaml.Unmarshaler interface.
 func (p *Precondition) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 
@@ -38,17 +37,20 @@ func (p *Precondition) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var sh struct {
-			Sh  string
-			Msg string
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			switch keyNode.Value {
+			case "sh":
+				p.Sh = valNode.Value
+			case "msg":
+				p.Msg = valNode.Value
+			}
 		}
-		if err := node.Decode(&sh); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		p.Sh = sh.Sh
-		p.Msg = sh.Msg
+
 		if p.Msg == "" {
-			p.Msg = fmt.Sprintf("%s failed", sh.Sh)
+			p.Msg = fmt.Sprintf("%s failed", p.Sh)
 		}
 		return nil
 	}

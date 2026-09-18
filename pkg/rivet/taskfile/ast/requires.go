@@ -52,17 +52,18 @@ func (e *Enum) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		// Reference to another variable: enum: { ref: .VAR }
-		var refStruct struct {
-			Ref string
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			if keyNode.Value == "ref" {
+				e.Ref = valNode.Value
+			}
 		}
-		if err := node.Decode(&refStruct); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		if refStruct.Ref == "" {
+
+		if e.Ref == "" {
 			return errors.NewTaskfileDecodeError(nil, node).WithTypeMessage("enum")
 		}
-		e.Ref = refStruct.Ref
 		return nil
 	}
 
@@ -98,15 +99,17 @@ func (v *VarsWithValidation) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var vv struct {
-			Name string
-			Enum *Enum
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			switch keyNode.Value {
+			case "name":
+				v.Name = valNode.Value
+			case "enum":
+				_ = valNode.Decode(&v.Enum)
+			}
 		}
-		if err := node.Decode(&vv); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		v.Name = vv.Name
-		v.Enum = vv.Enum
 		return nil
 	}
 

@@ -31,19 +31,26 @@ func (s *Output) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var tmp struct {
-			Group *OutputGroup
+		var groupSet bool
+		var targetGroup OutputGroup
+
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			if keyNode.Value == "group" {
+				if err := valNode.Decode(&targetGroup); err == nil {
+					groupSet = true
+				}
+			}
 		}
-		if err := node.Decode(&tmp); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		if tmp.Group == nil {
+
+		if !groupSet {
 			return errors.NewTaskfileDecodeError(nil, node).WithMessage(`output style must have the "group" key when in mapping form`)
 		}
-		*s = Output{
-			Name:  "group",
-			Group: *tmp.Group,
-		}
+
+		s.Name = "group"
+		s.Group = targetGroup
 		return nil
 	}
 
