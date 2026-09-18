@@ -113,79 +113,94 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 		t.Cmds = cmds
 		return nil
 
-	// Full task object
 	case yaml.MappingNode:
-		var task struct {
-			Cmds          []*Cmd
-			Cmd           *Cmd
-			Deps          []*Dep
-			Label         string
-			Desc          string
-			Prompt        Prompt
-			Summary       string
-			Aliases       []string
-			Sources       []*Glob
-			Generates     []*Glob
-			Transform     *Transform
-			Status        []string
-			Preconditions []*Precondition
-			Dir           string
-			Set           []string
-			Shopt         []string
-			Vars          *Vars
-			Dotenv        []string
-			Interactive   bool
-			Internal      bool
-			Prefix        string
-			IgnoreError   bool `yaml:"ignore_error"`
-			Run           string
-			Platforms     []*Platform
-			If            string
-			Requires      *Requires
-			Watch         bool
-			Failfast      bool
-		}
-		if err := node.Decode(&task); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		if task.Cmd != nil {
-			if task.Cmds != nil {
-				return errors.NewTaskfileDecodeError(nil, node).WithMessage("task cannot have both cmd and cmds")
+		var hasCmd, hasCmds bool
+		var singleCmd *Cmd
+		var sources, generates []*Glob
+
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			switch keyNode.Value {
+			case "label":
+				t.Label = valNode.Value
+			case "desc":
+				t.Desc = valNode.Value
+			case "summary":
+				t.Summary = valNode.Value
+			case "dir":
+				t.Dir = valNode.Value
+			case "if":
+				t.If = valNode.Value
+			case "run":
+				t.Run = valNode.Value
+			case "prefix":
+				t.Prefix = valNode.Value
+			case "interactive":
+				_ = valNode.Decode(&t.Interactive)
+			case "internal":
+				_ = valNode.Decode(&t.Internal)
+			case "watch":
+				_ = valNode.Decode(&t.Watch)
+			case "failfast":
+				_ = valNode.Decode(&t.Failfast)
+			case "ignore_error":
+				_ = valNode.Decode(&t.IgnoreError)
+			case "vars":
+				_ = valNode.Decode(&t.Vars)
+			case "prompt":
+				_ = valNode.Decode(&t.Prompt)
+			case "requires":
+				_ = valNode.Decode(&t.Requires)
+			case "transform":
+				_ = valNode.Decode(&t.Transform)
+			case "status":
+				_ = valNode.Decode(&t.Status)
+			case "preconditions":
+				_ = valNode.Decode(&t.Preconditions)
+			case "platforms":
+				_ = valNode.Decode(&t.Platforms)
+			case "shopt":
+				_ = valNode.Decode(&t.Shopt)
+			case "set":
+				_ = valNode.Decode(&t.Set)
+			case "dotenv":
+				_ = valNode.Decode(&t.Dotenv)
+			case "aliases":
+				_ = valNode.Decode(&t.Aliases)
+			case "deps":
+				_ = valNode.Decode(&t.Deps)
+			case "sources":
+				_ = valNode.Decode(&sources)
+			case "generates":
+				_ = valNode.Decode(&generates)
+			case "cmds":
+				if err := valNode.Decode(&t.Cmds); err == nil {
+					hasCmds = true
+				}
+			case "cmd":
+				var cmd Cmd
+				if err := valNode.Decode(&cmd); err == nil {
+					singleCmd = &cmd
+					hasCmd = true
+				}
 			}
-			t.Cmds = []*Cmd{task.Cmd}
-		} else {
-			t.Cmds = task.Cmds
 		}
-		t.Deps = task.Deps
-		t.Label = task.Label
-		t.Desc = task.Desc
-		t.Prompt = task.Prompt
-		t.Summary = task.Summary
-		t.Aliases = task.Aliases
-		t.Transform = task.Transform
-		if t.Transform == nil && (len(task.Sources) > 0 || len(task.Generates) > 0) {
+
+		if hasCmd && hasCmds {
+			return errors.NewTaskfileDecodeError(nil, node).WithMessage("task cannot have both cmd and cmds")
+		}
+		if hasCmd {
+			t.Cmds = []*Cmd{singleCmd}
+		}
+
+		if t.Transform == nil && (len(sources) > 0 || len(generates) > 0) {
 			t.Transform = &Transform{
-				Matches: task.Sources,
-				Yields:  task.Generates,
+				Matches: sources,
+				Yields:  generates,
 			}
 		}
-		t.Status = task.Status
-		t.Preconditions = task.Preconditions
-		t.Dir = task.Dir
-		t.Set = task.Set
-		t.Shopt = task.Shopt
-		t.Vars = task.Vars
-		t.Dotenv = task.Dotenv
-		t.Interactive = task.Interactive
-		t.Internal = task.Internal
-		t.Prefix = task.Prefix
-		t.IgnoreError = task.IgnoreError
-		t.Run = task.Run
-		t.Platforms = task.Platforms
-		t.If = task.If
-		t.Requires = task.Requires
-		t.Watch = task.Watch
-		t.Failfast = task.Failfast
 		return nil
 	}
 

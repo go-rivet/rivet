@@ -189,24 +189,24 @@ func (vs *Vars) UnmarshalYAML(node *yaml.Node) error {
 	if vs == nil {
 		return errors.NewTaskfileDecodeError(nil, node).WithTypeMessage("vars")
 	}
-	vs.mutex.Lock()
-	vs.om = orderedmap.NewOrderedMap[string, Var]()
-	vs.mutex.Unlock()
 
 	switch node.Kind {
 	case yaml.MappingNode:
+		capacity := len(node.Content) / 2
+		localOM := orderedmap.NewOrderedMapWithCapacity[string, Var](capacity)
+
 		for i := 0; i < len(node.Content); i += 2 {
 			keyNode := node.Content[i]
 			valueNode := node.Content[i+1]
 
-			if valueNode.Kind == yaml.AliasNode &&
-				valueNode.Alias.Kind == yaml.MappingNode {
-				var nestedVars Vars
-				if err := valueNode.Decode(&nestedVars); err != nil {
-					return errors.NewTaskfileDecodeError(err, node)
-				}
-				for k, v := range nestedVars.All() {
-					vs.Set(k, v)
+			if valueNode.Kind == yaml.AliasNode && valueNode.Alias.Kind == yaml.MappingNode {
+				targetNode := valueNode.Alias
+				for j := 0; j < len(targetNode.Content); j += 2 {
+					var v Var
+					if err := targetNode.Content[j+1].Decode(&v); err != nil {
+						return errors.NewTaskfileDecodeError(err, node)
+					}
+					localOM.Set(targetNode.Content[j].Value, v)
 				}
 				continue
 			}
@@ -215,8 +215,12 @@ func (vs *Vars) UnmarshalYAML(node *yaml.Node) error {
 			if err := valueNode.Decode(&v); err != nil {
 				return errors.NewTaskfileDecodeError(err, node)
 			}
-			vs.Set(keyNode.Value, v)
+			localOM.Set(keyNode.Value, v)
 		}
+
+		vs.mutex.Lock()
+		vs.om = localOM
+		vs.mutex.Unlock()
 		return nil
 	}
 

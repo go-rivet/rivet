@@ -1,7 +1,6 @@
 package taskfile
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 
@@ -44,14 +43,7 @@ func (node *FileNode) Location() string {
 }
 
 func (node *FileNode) Read() ([]byte, error) {
-	f, err := os.Open(node.Location())
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = f.Close()
-	}()
-	return io.ReadAll(f)
+	return os.ReadFile(node.Location())
 }
 
 func (node *FileNode) ResolveEntrypoint(entrypoint string) (string, error) {

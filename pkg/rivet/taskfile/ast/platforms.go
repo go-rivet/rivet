@@ -54,18 +54,28 @@ func (p *Platform) UnmarshalYAML(node *yaml.Node) error {
 // and parses it into the Platform struct. It returns an error if the input string is invalid.
 // Valid combinations for input: OS, Arch, OS/Arch
 func (p *Platform) parsePlatform(input string) error {
-	splitValues := strings.Split(input, "/")
-	if len(splitValues) > 2 {
-		return &ErrInvalidPlatform{Platform: input}
-	}
-	if err := p.parseOsOrArch(splitValues[0]); err != nil {
-		return &ErrInvalidPlatform{Platform: input}
-	}
-	if len(splitValues) == 2 {
-		if err := p.parseArch(splitValues[1]); err != nil {
+	idx := strings.IndexByte(input, '/')
+	if idx == -1 {
+		if err := p.parseOsOrArch(input); err != nil {
 			return &ErrInvalidPlatform{Platform: input}
 		}
+		return nil
 	}
+
+	if strings.IndexByte(input[idx+1:], '/') != -1 {
+		return &ErrInvalidPlatform{Platform: input}
+	}
+
+	first := input[:idx]
+	second := input[idx+1:]
+
+	if err := p.parseOsOrArch(first); err != nil {
+		return &ErrInvalidPlatform{Platform: input}
+	}
+	if err := p.parseArch(second); err != nil {
+		return &ErrInvalidPlatform{Platform: input}
+	}
+
 	return nil
 }
 

@@ -29,18 +29,19 @@ func (t *Transform) DeepCopy() *Transform {
 func (t *Transform) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.MappingNode:
-		var transform struct {
-			Matches []*Glob
-			Yields  []*Glob
-			Subst   string
-		}
-		if err := node.Decode(&transform); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
 
+			switch keyNode.Value {
+			case "matches":
+				_ = valNode.Decode(&t.Matches)
+			case "yields":
+				_ = valNode.Decode(&t.Yields)
+			case "subst":
+				t.Subst = valNode.Value
+			}
 		}
-		t.Matches = transform.Matches
-		t.Yields = transform.Yields
-		t.Subst = transform.Subst
 		return nil
 	}
 	return errors.NewTaskfileDecodeError(nil, node).WithTypeMessage("transform")
@@ -53,11 +54,12 @@ func (t *Transform) SubstToGlob() (*Glob, *Glob) {
 		return nil, nil
 	}
 
-	parts := strings.SplitN(t.Subst, ":", 2)
-	if len(parts) != 2 {
+	idx := strings.IndexByte(t.Subst, ':')
+	if idx == -1 {
 		return nil, nil
 	}
-	fromPattern, toPattern := parts[0], parts[1]
+	fromPattern := t.Subst[:idx]
+	toPattern := t.Subst[idx+1:]
 
 	// Convert Make style "%" wildcard to a standard glob wildcard "*"
 	// E.g., "src/%.old" becomes "src/*.old"

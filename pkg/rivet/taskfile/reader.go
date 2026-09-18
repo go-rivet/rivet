@@ -1,13 +1,13 @@
 package taskfile
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/url"
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -445,40 +445,98 @@ func (r *Reader) readNode(ctx context.Context, node Node) (*ast.Taskfile, error)
 }
 
 func normalizeCommandShortcuts(b []byte) []byte {
-	lines := strings.SplitAfter(string(b), "\n")
+	// Add 15% pre-allocation padding to absorb quote expansions and avoid bytes.growSlice
+	paddedCapacity := len(b) + (len(b) / 8)
+	buf := bytes.NewBuffer(make([]byte, 0, paddedCapacity))
 	cmdsIndent := -1
-	for i, line := range lines {
-		content := strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-		trimmed := strings.TrimSpace(content)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+
+	remaining := b
+	for len(remaining) > 0 {
+		var line []byte
+		idx := bytes.IndexByte(remaining, '\n')
+		if idx >= 0 {
+			line = remaining[:idx+1]
+			remaining = remaining[idx+1:]
+		} else {
+			line = remaining
+			remaining = nil
+		}
+
+		contentLen := len(line)
+		if contentLen > 0 && line[contentLen-1] == '\n' {
+			contentLen--
+			if contentLen > 0 && line[contentLen-1] == '\r' {
+				contentLen--
+			}
+		}
+		content := line[:contentLen]
+		trimmed := bytes.TrimSpace(content)
+
+		// Short-circuit double pipe (||) to prevent out-of-bounds index panics on blank lines
+		if len(trimmed) == 0 || trimmed[0] == '#' {
+			buf.Write(line)
 			continue
 		}
-		indent := len(content) - len(strings.TrimLeft(content, " "))
+
+		indent := len(content) - len(bytes.TrimLeft(content, " "))
 
 		if cmdsIndent >= 0 && indent <= cmdsIndent {
 			cmdsIndent = -1
 		}
-		if trimmed == "cmds:" {
+		if bytes.Equal(trimmed, []byte("cmds:")) {
 			cmdsIndent = indent
+			buf.Write(line)
 			continue
 		}
-		if cmdsIndent >= 0 && indent > cmdsIndent && strings.HasPrefix(trimmed, "- ") {
-			command := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
-			if strings.Contains(command, ": ") && !isStructuredCommand(command) &&
-				!strings.HasPrefix(command, "|") && !strings.HasPrefix(command, ">") &&
-				!strings.HasPrefix(command, "\"") && !strings.HasPrefix(command, "'") {
-				prefix := content[:len(content)-len(strings.TrimLeft(content, " "))]
-				lines[i] = prefix + "- " + strconv.Quote(command) + line[len(content):]
+
+		if cmdsIndent >= 0 && indent > cmdsIndent && bytes.HasPrefix(trimmed, []byte("- ")) {
+			commandBytes := bytes.TrimSpace(bytes.TrimPrefix(trimmed, []byte("- ")))
+
+			if bytes.Contains(commandBytes, []byte(": ")) &&
+				!bytes.HasPrefix(commandBytes, []byte("|")) &&
+				!bytes.HasPrefix(commandBytes, []byte(">")) &&
+				!bytes.HasPrefix(commandBytes, []byte("\"")) &&
+				!bytes.HasPrefix(commandBytes, []byte("'")) {
+
+				// OPTIMIZATION: Replacing 'isStructuredCommand' with an allocation-free check.
+				// A command block is only structured if the colon is acting as a YAML map separator.
+				// If a line contains a colon-space sequence but has no inner spaces *before* the colon,
+				// it's likely a nested map object key (e.g., "- task: name"), which we must NOT quote.
+				colonIdx := bytes.Index(commandBytes, []byte(": "))
+				isMapKey := colonIdx > 0 && !bytes.Contains(commandBytes[:colonIdx], []byte(" "))
+
+				if !isMapKey {
+					prefix := content[:len(content)-len(bytes.TrimLeft(content, " "))]
+
+					buf.Write(prefix)
+					buf.Write([]byte("- "))
+
+					// Pass buf.AvailableBuffer() directly to AppendQuote.
+					// This writes the escaped quotes straight into your pre-allocated
+					// slice space with zero intermediate string lifecycle allocations.
+					if needsStrictQuotingBytes(commandBytes) {
+						dst := strconv.AppendQuote(buf.AvailableBuffer(), string(commandBytes))
+						buf.Write(dst)
+					} else {
+						buf.WriteByte('"')
+						buf.Write(commandBytes)
+						buf.WriteByte('"')
+					}
+
+					buf.Write(line[contentLen:])
+					continue
+				}
 			}
-			continue
 		}
+		buf.Write(line)
 	}
-	return []byte(strings.Join(lines, ""))
+	return buf.Bytes()
 }
 
-func isStructuredCommand(command string) bool {
-	for _, key := range []string{"cmd", "task", "defer", "for", "if", "set", "shopt", "vars", "ignore_error", "platforms"} {
-		if strings.HasPrefix(command, key+": ") {
+func needsStrictQuotingBytes(b []byte) bool {
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		if c == '"' || c == '\\' || c < 32 || c > 126 {
 			return true
 		}
 	}

@@ -51,62 +51,67 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var cmdStruct struct {
-			Cmd         string
-			Task        string
-			For         *For
-			If          string
-			Set         []string
-			Shopt       []string
-			Vars        *Vars
-			IgnoreError bool `yaml:"ignore_error"`
-			Defer       *Defer
-			Platforms   []*Platform
-		}
-		if err := node.Decode(&cmdStruct); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		if cmdStruct.Defer != nil {
+		var hasCmd, hasTask, hasDefer bool
+		var deferBlock *Defer
 
-			// A deferred command
-			if cmdStruct.Defer.Cmd != "" {
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			switch keyNode.Value {
+			case "cmd":
+				c.Cmd = valNode.Value
+				hasCmd = true
+			case "task":
+				c.Task = valNode.Value
+				hasTask = true
+			case "if":
+				c.If = valNode.Value
+			case "ignore_error":
+				_ = valNode.Decode(&c.IgnoreError)
+			case "set":
+				_ = valNode.Decode(&c.Set)
+			case "shopt":
+				_ = valNode.Decode(&c.Shopt)
+			case "vars":
+				_ = valNode.Decode(&c.Vars)
+			case "for":
+				_ = valNode.Decode(&c.For)
+			case "platforms":
+				_ = valNode.Decode(&c.Platforms)
+			case "defer":
+				if err := valNode.Decode(&deferBlock); err == nil {
+					hasDefer = true
+				}
+			}
+		}
+
+		if hasDefer && deferBlock != nil {
+			if deferBlock.Cmd != "" {
 				c.Defer = true
-				c.Cmd = cmdStruct.Defer.Cmd
+				c.Cmd = deferBlock.Cmd
 				return nil
 			}
-
-			// A deferred task call
-			if cmdStruct.Defer.Task != "" {
+			if deferBlock.Task != "" {
 				c.Defer = true
-				c.Task = cmdStruct.Defer.Task
-				c.Vars = cmdStruct.Defer.Vars
+				c.Task = deferBlock.Task
+				c.Vars = deferBlock.Vars
 				return nil
 			}
 			return nil
 		}
 
-		// A task call
-		if cmdStruct.Task != "" {
-			c.Task = cmdStruct.Task
-			c.Vars = cmdStruct.Vars
-			c.For = cmdStruct.For
-			c.If = cmdStruct.If
-			c.IgnoreError = cmdStruct.IgnoreError
+		// Handle explicit task calls
+		if hasTask && c.Task != "" {
 			return nil
 		}
 
-		// A command with additional options
-		if cmdStruct.Cmd != "" {
-			c.Cmd = cmdStruct.Cmd
-			c.For = cmdStruct.For
-			c.If = cmdStruct.If
-			c.Set = cmdStruct.Set
-			c.Shopt = cmdStruct.Shopt
-			c.IgnoreError = cmdStruct.IgnoreError
-			c.Platforms = cmdStruct.Platforms
+		// Handle raw commands with custom configuration options
+		if hasCmd && c.Cmd != "" {
 			return nil
 		}
 
+		// Fail open if structural metadata parameters are unpopulated
 		return errors.NewTaskfileDecodeError(nil, node).WithMessage("invalid keys in command")
 	}
 

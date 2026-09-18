@@ -24,17 +24,19 @@ func (d *Defer) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var deferStruct struct {
-			Defer string
-			Task  string
-			Vars  *Vars
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valNode := node.Content[i+1]
+
+			switch keyNode.Value {
+			case "defer":
+				d.Cmd = valNode.Value
+			case "task":
+				d.Task = valNode.Value
+			case "vars":
+				_ = valNode.Decode(&d.Vars)
+			}
 		}
-		if err := node.Decode(&deferStruct); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		d.Cmd = deferStruct.Defer
-		d.Task = deferStruct.Task
-		d.Vars = deferStruct.Vars
 		return nil
 	}
 
