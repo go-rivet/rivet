@@ -110,3 +110,21 @@ vars:
 		assert.Equal(t, test.expected, test.v)
 	}
 }
+
+func TestVarLiveAndDir(t *testing.T) {
+	t.Parallel()
+
+	t.Run("live value", func(t *testing.T) {
+		var got ast.Var
+		require.NoError(t, yaml.Unmarshal([]byte("live: [one, two]\n"), &got))
+		assert.Equal(t, []any{"one", "two"}, got.Live)
+	})
+
+	t.Run("shell working directory", func(t *testing.T) {
+		var got ast.Var
+		require.NoError(t, yaml.Unmarshal([]byte("sh: echo value\ndir: ./subdir\n"), &got))
+		require.NotNil(t, got.Sh)
+		assert.Equal(t, "echo value", *got.Sh)
+		assert.Equal(t, "./subdir", got.Dir)
+	})
+}

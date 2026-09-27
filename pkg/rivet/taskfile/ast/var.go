@@ -24,7 +24,7 @@ func (v *Var) UnmarshalYAML(node *yaml.Node) error {
 		}
 
 		switch key {
-		case "sh", "ref", "map":
+		case "sh", "ref", "map", "live", "dir":
 			for i := 0; i < len(node.Content); i += 2 {
 				keyNode := node.Content[i]
 				valNode := node.Content[i+1]
@@ -36,12 +36,20 @@ func (v *Var) UnmarshalYAML(node *yaml.Node) error {
 					v.Ref = valNode.Value
 				case "map":
 					_ = valNode.Decode(&v.Value)
+				case "live":
+					if err := valNode.Decode(&v.Live); err != nil {
+						return errors.NewTaskfileDecodeError(err, node)
+					}
+				case "dir":
+					if err := valNode.Decode(&v.Dir); err != nil {
+						return errors.NewTaskfileDecodeError(err, node)
+					}
 				}
 			}
 			return nil
 
 		default:
-			return errors.NewTaskfileDecodeError(nil, node).WithMessage(`%q is not a valid variable type. Try "sh", "ref", "map" or using a scalar value`, key)
+			return errors.NewTaskfileDecodeError(nil, node).WithMessage(`%q is not a valid variable type. Try "sh", "ref", "map", "live", "dir" or using a scalar value`, key)
 		}
 
 	default:
