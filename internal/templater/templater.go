@@ -76,6 +76,24 @@ func (r *Cache) ResetCache() {
 	r.cacheMap = r.Vars.ToCacheMap()
 }
 
+// SetVar updates the cache's variable map in place, mirroring ast.Vars.ToCacheMap's
+// per-entry rules, so that a newly resolved var is visible to later template
+// lookups without forcing a full ast.Vars -> map rebuild. It is a no-op until
+// the cache map has been lazily built by a prior lookup.
+func (r *Cache) SetVar(key string, v ast.Var) {
+	if r.cacheMap == nil {
+		return
+	}
+	if v.Sh != nil && *v.Sh != "" {
+		return
+	}
+	if v.Live != nil {
+		r.cacheMap[key] = v.Live
+	} else {
+		r.cacheMap[key] = v.Value
+	}
+}
+
 func (r *Cache) Err() error {
 	return r.err
 }

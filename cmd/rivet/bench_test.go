@@ -70,14 +70,42 @@ var manyTasksRunNames = func() []string {
 	return runNames
 }()
 
+// manyTasksGlobalVars are the names of the 4 global vars written by
+// writeManyTasksTaskfile: the first 2 are plain strings, the last 2 are
+// templates derived from the first 2.
+var manyTasksGlobalVars = []string{"GLOBAL_VAR_1", "GLOBAL_VAR_2", "GLOBAL_VAR_3", "GLOBAL_VAR_4"}
+
 // writeManyTasksTaskfile writes a Taskfile containing all of manyTasksNames,
-// with every other task (indices 0, 2, 4, ...) marked internal: true.
+// with every other task (indices 0, 2, 4, ...) marked internal: true. To
+// approximate a realistic Taskfile, it also declares 4 global vars (2 plain
+// strings and 2 templates derived from them) and, per task, 2 task-scoped
+// vars named after the task; each task's 3 cmds print the task name followed
+// by 2 randomly chosen vars (global or task-scoped).
 func writeManyTasksTaskfile(tb testing.TB, dir string) {
 	tb.Helper()
+	r := rand.New(rand.NewSource(3))
 	var sb strings.Builder
-	sb.WriteString("version: '3'\ntasks:\n")
+	sb.WriteString("version: '3'\n")
+	sb.WriteString("vars:\n")
+	sb.WriteString("  GLOBAL_VAR_1: \"global value one\"\n")
+	sb.WriteString("  GLOBAL_VAR_2: \"global value two\"\n")
+	sb.WriteString("  GLOBAL_VAR_3: \"{{.GLOBAL_VAR_1}}-templated\"\n")
+	sb.WriteString("  GLOBAL_VAR_4: \"{{.GLOBAL_VAR_2}}-templated\"\n")
+	sb.WriteString("tasks:\n")
 	for i, name := range manyTasksNames {
-		fmt.Fprintf(&sb, "  %q:\n    cmds:\n      - echo \"running task: {{.TASK}}\"\n", name)
+		// leading underscore keeps the var name a valid template identifier
+		// even though task names may start with a digit.
+		var1, var2 := "_"+name+"_VAR1", "_"+name+"_VAR2"
+		fmt.Fprintf(&sb, "  %q:\n", name)
+		sb.WriteString("    vars:\n")
+		fmt.Fprintf(&sb, "      %s: %q\n", var1, name+" text one")
+		fmt.Fprintf(&sb, "      %s: %q\n", var2, name+" text two")
+
+		taskVars := append(append([]string{}, manyTasksGlobalVars...), var1, var2)
+		sb.WriteString("    cmds:\n")
+		sb.WriteString("      - echo \"running task: {{.TASK}}\"\n")
+		fmt.Fprintf(&sb, "      - echo \"{{.%s}}\"\n", taskVars[r.Intn(len(taskVars))])
+		fmt.Fprintf(&sb, "      - echo \"{{.%s}}\"\n", taskVars[r.Intn(len(taskVars))])
 		if i%2 == 0 {
 			sb.WriteString("    internal: true\n")
 		}
@@ -93,7 +121,7 @@ func writeManyTasksTaskfile(tb testing.TB, dir string) {
 // them printed its "running task: {{.TASK}}" message exactly once.
 func manyTasksBenchCase() benchCase {
 	return benchCase{
-		name:  "many_tasks",
+		name:  "many_tasks_run_all",
 		setup: writeManyTasksTaskfile,
 		calls: func() []*task.Call {
 			calls := make([]*task.Call, len(manyTasksRunNames))
@@ -107,7 +135,7 @@ func manyTasksBenchCase() benchCase {
 			counts := make(map[string]int, len(manyTasksRunNames))
 			for _, line := range strings.Split(stdout, "\n") {
 				line = strings.TrimSpace(line)
-				if line != "" {
+				if strings.HasPrefix(line, "running task: ") {
 					counts[line]++
 				}
 			}

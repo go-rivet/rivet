@@ -298,13 +298,18 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 
 		var deferredExitCode uint8
 
+		// t.Vars is fixed for the lifetime of this task run, so the shell env
+		// built from it is identical for every cmd; build it once instead of
+		// per-cmd.
+		taskEnv := env.GetFromVars(t.Vars)
+
 		for i := range t.Cmds {
 			if t.Cmds[i].Defer {
-				defer e.runDeferred(ctx, t, call, i, t.Vars, &deferredExitCode)
+				defer e.runDeferred(ctx, t, call, i, t.Vars, taskEnv, &deferredExitCode)
 				continue
 			}
 
-			if err := e.runCommand(ctx, t, call, i); err != nil {
+			if err := e.runCommand(ctx, t, call, i, taskEnv); err != nil {
 				if err2 := e.statusOnError(t); err2 != nil {
 					rlog.Debugf(ctx, "task: error cleaning status on error: %v\n", err2)
 				}
@@ -369,7 +374,7 @@ func (e *Executor) runDeps(ctx context.Context, t *ast.Task) error {
 	return g.Wait()
 }
 
-func (e *Executor) runDeferred(taskCtx context.Context, t *ast.Task, call *Call, i int, vars *ast.Vars, deferredExitCode *uint8) {
+func (e *Executor) runDeferred(taskCtx context.Context, t *ast.Task, call *Call, i int, vars *ast.Vars, taskEnv []string, deferredExitCode *uint8) {
 	// Detached from taskCtx's cancellation so cleanup still runs if the task's
 	// own context was cancelled (e.g. a sibling failed under --failfast), but
 	// the trace/span identifiers are carried over so logs still attribute
@@ -393,12 +398,12 @@ func (e *Executor) runDeferred(taskCtx context.Context, t *ast.Task, call *Call,
 	cmd.If = templater.ReplaceWithExtra(cmd.If, cache, extra)
 	cmd.Vars = templater.ReplaceVarsWithExtra(cmd.Vars, cache, extra)
 
-	if err := e.runCommand(ctx, t, call, i); err != nil {
+	if err := e.runCommand(ctx, t, call, i, taskEnv); err != nil {
 		rlog.Debugf(ctx, "task: ignored error in deferred cmd: %s\n", err.Error())
 	}
 }
 
-func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i int) (err error) {
+func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i int, taskEnv []string) (err error) {
 	cmd := t.Cmds[i]
 
 	// Check if condition for any command type
@@ -406,7 +411,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		if err := execext.RunCommand(ctx, &execext.RunCommandOptions{
 			Command: cmd.If,
 			Dir:     t.Dir,
-			Env:     env.GetFromVars(t.Vars),
+			Env:     taskEnv,
 		}); err != nil {
 			rlog.Debugf(ctx, "task: [%s] if condition not met - skipped\n", t.Name())
 			return nil
@@ -472,7 +477,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		err = execext.RunCommand(ctx, &execext.RunCommandOptions{
 			Command:   cmd.Cmd,
 			Dir:       t.Dir,
-			Env:       env.GetFromVars(t.Vars),
+			Env:       taskEnv,
 			PosixOpts: slicesext.UniqueJoin(e.Taskfile.Set, t.Set, cmd.Set),
 			BashOpts:  slicesext.UniqueJoin(e.Taskfile.Shopt, t.Shopt, cmd.Shopt),
 			Stdin:     e.Stdin,

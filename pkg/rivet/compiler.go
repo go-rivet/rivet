@@ -57,12 +57,12 @@ func (c *Compiler) FastGetVariables(ctx context.Context, t *ast.Task, call *Call
 	return c.getVariables(ctx, t, call, false)
 }
 
-func (c *Compiler) resolveAndSetVar(ctx context.Context, result *ast.Vars, k string, v ast.Var, dir string, evaluateSh bool) error {
-	cache := &templater.Cache{Vars: result}
+func (c *Compiler) resolveAndSetVar(ctx context.Context, cache *templater.Cache, result *ast.Vars, k string, v ast.Var, dir string, evaluateSh bool) error {
 	newVar := templater.ReplaceVar(v, cache)
 
 	set := func(key string, value ast.Var) {
 		result.Set(key, value)
+		cache.SetVar(key, value)
 	}
 
 	// Templating only (no shell evaluation).
@@ -96,8 +96,13 @@ func (c *Compiler) mergeVars(ctx context.Context, dest *ast.Vars, source *ast.Va
 	if source == nil || dest == nil {
 		return nil
 	}
+	// Shared across the whole source so a templated var only forces one
+	// ast.Vars -> map conversion of dest per mergeVars call, instead of one
+	// per variable; resolveAndSetVar keeps the cache map in sync as it sets
+	// each resolved var so later vars in source still see earlier ones.
+	cache := &templater.Cache{Vars: dest}
 	for k, v := range source.All() {
-		if err := c.resolveAndSetVar(ctx, dest, k, v, dir, evaluateShVars); err != nil {
+		if err := c.resolveAndSetVar(ctx, cache, dest, k, v, dir, evaluateShVars); err != nil {
 			return err
 		}
 	}
@@ -105,7 +110,8 @@ func (c *Compiler) mergeVars(ctx context.Context, dest *ast.Vars, source *ast.Va
 }
 
 func (c *Compiler) getVariables(ctx context.Context, t *ast.Task, call *Call, evaluateShVars bool) (*ast.Vars, error) {
-	initialCapacity := env.GetEnviron().Len() + 10 + 5 // +specialvars
+	osEnv := env.GetEnviron()
+	initialCapacity := osEnv.Len() + 10 + 5 // +specialvars
 
 	// Add sizing hints if task context is present
 	if t != nil {
@@ -118,7 +124,18 @@ func (c *Compiler) getVariables(ctx context.Context, t *ast.Task, call *Call, ev
 		initialCapacity += call.Vars.Len()
 	}
 
-	result := ast.NewVarsWithCapacity(initialCapacity)
+	mergeOSEnv := false
+	for value := range osEnv.Values() {
+		if stringValue, ok := value.Value.(string); ok && strings.Contains(stringValue, "{{") {
+			mergeOSEnv = true
+			break
+		}
+	}
+
+	result := osEnv
+	if mergeOSEnv {
+		result = ast.NewVarsWithCapacity(initialCapacity)
+	}
 	taskdir := ""
 	taskOnly := (t != nil)
 	taskCall := (t != nil && call != nil)
@@ -166,7 +183,7 @@ func (c *Compiler) getVariables(ctx context.Context, t *ast.Task, call *Call, ev
 	}
 
 	if err := processMergeItem([]mergeItem{
-		{"OS.Env", true, func() *ast.Vars { return env.GetEnviron() }, nil, nil},
+		{"OS.Env", mergeOSEnv, func() *ast.Vars { return osEnv }, nil, nil},
 		{"SpecialVars", true, func() *ast.Vars { return c.getSpecialVars(t, call) }, nil, nil},
 		{proc: updateTaskdir},
 		{"TaskfileDotenv.Env", true, func() *ast.Vars { return c.TaskfileDotenv.Vars }, nil, nil},
