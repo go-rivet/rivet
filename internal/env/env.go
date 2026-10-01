@@ -19,8 +19,9 @@ var (
 	baselineEnvOnce sync.Once
 )
 
-// GetEnviron returns a fresh copy of the baseline environment variables.
-func GetEnviron() *ast.Vars {
+// GetEnvironBase returns the shared read-only baseline environment, except in
+// tests where it returns a fresh snapshot so t.Setenv changes remain visible.
+func GetEnvironBase() *ast.Vars {
 	isBenchmark := false
 	if benchFlag := flag.Lookup("test.bench"); benchFlag != nil && benchFlag.Value.String() != "" {
 		isBenchmark = true
@@ -35,7 +36,12 @@ func GetEnviron() *ast.Vars {
 	baselineEnvOnce.Do(func() {
 		baselineEnv = buildEnvironSnapshot()
 	})
-	return baselineEnv.DeepCopy()
+	return baselineEnv
+}
+
+// GetEnviron returns a fresh copy of the baseline environment variables.
+func GetEnviron() *ast.Vars {
+	return GetEnvironBase().DeepCopy()
 }
 
 func buildEnvironSnapshot() *ast.Vars {

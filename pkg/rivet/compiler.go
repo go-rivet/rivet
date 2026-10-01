@@ -110,8 +110,8 @@ func (c *Compiler) mergeVars(ctx context.Context, dest *ast.Vars, source *ast.Va
 }
 
 func (c *Compiler) getVariables(ctx context.Context, t *ast.Task, call *Call, evaluateShVars bool) (*ast.Vars, error) {
-	osEnv := env.GetEnviron()
-	initialCapacity := osEnv.Len() + 10 + 5 // +specialvars
+	osEnv := env.GetEnvironBase()
+	initialCapacity := 10 + 5 // +specialvars
 
 	// Add sizing hints if task context is present
 	if t != nil {
@@ -134,7 +134,9 @@ func (c *Compiler) getVariables(ctx context.Context, t *ast.Task, call *Call, ev
 
 	result := osEnv
 	if mergeOSEnv {
-		result = ast.NewVarsWithCapacity(initialCapacity)
+		result = ast.NewVarsWithCapacity(osEnv.Len() + initialCapacity)
+	} else {
+		result = ast.NewVarsWithBase(osEnv, initialCapacity)
 	}
 	taskdir := ""
 	taskOnly := (t != nil)
