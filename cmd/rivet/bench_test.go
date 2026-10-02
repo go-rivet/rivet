@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
@@ -54,6 +55,20 @@ var benchCases = []benchCase{
 	},
 	manyTasksBenchCase(),
 	manyTasksSingleCallBenchCase(),
+	mtimeBenchCase(mtimeBenchScenario{name: "500_Files_Depth_3", totalFiles: 500, depth: 3}),
+}
+
+type mtimeBenchScenario struct {
+	name       string
+	totalFiles int
+	depth      int
+}
+
+var fullMtimeBenchScenarios = []mtimeBenchScenario{
+	{name: "Small_100_Files", totalFiles: 100, depth: 2},
+	{name: "Standard_10k_Files", totalFiles: 10000, depth: 3},
+	{name: "Massive_50k_Files", totalFiles: 50000, depth: 3},
+	{name: "Extremely_Deep_Layout", totalFiles: 10000, depth: 6},
 }
 
 // manyTasksNames and manyTasksRunNames hold the 1000 task names (and the 500
@@ -156,8 +171,7 @@ func manyTasksBenchCase() benchCase {
 // manyTasksBenchCase, but only runs one non-internal task, selected at
 // random, to measure lookup/dispatch cost independent of task count run.
 func manyTasksSingleCallBenchCase() benchCase {
-	r := rand.New(rand.NewSource(2))
-	name := manyTasksRunNames[r.Intn(len(manyTasksRunNames))]
+	name := manyTasksSingleRunName()
 
 	return benchCase{
 		name:  "many_tasks_single_call",
@@ -178,6 +192,211 @@ func manyTasksSingleCallBenchCase() benchCase {
 				tb.Fatalf("expected %q to run exactly once, got %d (stdout=%q stderr=%q)", want, count, stdout, stderr)
 			}
 		},
+	}
+}
+
+func manyTasksSingleRunName() string {
+	r := rand.New(rand.NewSource(2))
+	return manyTasksRunNames[r.Intn(len(manyTasksRunNames))]
+}
+
+// BenchmarkManyTasksCompare compares Rivet with Make for one and all 500
+// runnable targets. Run it explicitly with -bench=BenchmarkManyTasksCompare.
+func BenchmarkManyTasksCompare(b *testing.B) {
+	rivetAll := manyTasksBenchCase()
+	b.Run("rivet_many_tasks_run_all", func(b *testing.B) {
+		runRivetBenchCase(b, rivetAll)
+	})
+	b.Run("make_many_tasks_run_all", func(b *testing.B) {
+		runManyTasksMakeBench(b, "", manyTasksRunNames)
+	})
+
+	singleName := manyTasksSingleRunName()
+	rivetSingle := manyTasksSingleCallBenchCase()
+	b.Run("rivet_many_tasks_single_call", func(b *testing.B) {
+		runRivetBenchCase(b, rivetSingle)
+	})
+	b.Run("make_many_tasks_single_call", func(b *testing.B) {
+		runManyTasksMakeBench(b, singleName, []string{singleName})
+	})
+}
+
+func runManyTasksMakeBench(b *testing.B, target string, expectedTasks []string) {
+	b.Helper()
+	dir := b.TempDir()
+	writeManyTasksMakefile(b, dir)
+	var stdout, stderr bytes.Buffer
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		stdout.Reset()
+		stderr.Reset()
+		args := []string{"--no-print-directory"}
+		if target != "" {
+			args = append(args, target)
+		}
+		cmd := exec.Command("make", args...)
+		cmd.Dir = dir
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			b.Fatalf("make: %v (stderr=%q)", err, stderr.String())
+		}
+	}
+	b.StopTimer()
+	checkManyTasksOutput(b, stdout.String(), stderr.String(), expectedTasks)
+}
+
+func writeManyTasksMakefile(tb testing.TB, dir string) {
+	tb.Helper()
+	var sb strings.Builder
+	sb.WriteString("GLOBAL_VAR_1 := global value one\n")
+	sb.WriteString("GLOBAL_VAR_2 := global value two\n")
+	sb.WriteString("GLOBAL_VAR_3 = $(GLOBAL_VAR_1)-templated\n")
+	sb.WriteString("GLOBAL_VAR_4 = $(GLOBAL_VAR_2)-templated\n")
+	sb.WriteString(".DEFAULT_GOAL := all\n.PHONY: all")
+	for _, name := range manyTasksRunNames {
+		fmt.Fprintf(&sb, " %s", name)
+	}
+	sb.WriteString("\nall:")
+	for _, name := range manyTasksRunNames {
+		fmt.Fprintf(&sb, " %s", name)
+	}
+	sb.WriteByte('\n')
+
+	r := rand.New(rand.NewSource(3))
+	for i, name := range manyTasksNames {
+		var1, var2 := "_"+name+"_VAR1", "_"+name+"_VAR2"
+		vars := append(append([]string{}, manyTasksGlobalVars...), var1, var2)
+		commandVars := [2]string{
+			vars[r.Intn(len(vars))],
+			vars[r.Intn(len(vars))],
+		}
+		if i%2 == 0 {
+			continue
+		}
+
+		fmt.Fprintf(&sb, "%s: %s := %q\n", name, var1, name+" text one")
+		fmt.Fprintf(&sb, "%s: %s := %q\n", name, var2, name+" text two")
+		fmt.Fprintf(&sb, "%s:\n\t@echo \"running task: $@\"\n", name)
+		fmt.Fprintf(&sb, "\t@echo \"$(%s)\"\n", commandVars[0])
+		fmt.Fprintf(&sb, "\t@echo \"$(%s)\"\n", commandVars[1])
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Makefile"), []byte(sb.String()), 0o644); err != nil {
+		tb.Fatalf("write Makefile: %v", err)
+	}
+}
+
+func checkManyTasksOutput(tb testing.TB, stdout, stderr string, expectedTasks []string) {
+	tb.Helper()
+	counts := make(map[string]int, len(expectedTasks))
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "running task: ") {
+			counts[line]++
+		}
+	}
+	for _, name := range expectedTasks {
+		want := "running task: " + name
+		if counts[want] != 1 {
+			tb.Fatalf("expected %q to run exactly once, got %d (stderr=%q)", want, counts[want], stderr)
+		}
+	}
+	if len(counts) != len(expectedTasks) {
+		tb.Fatalf("expected exactly %d distinct task outputs, got %d (stdout=%q stderr=%q)", len(expectedTasks), len(counts), stdout, stderr)
+	}
+}
+
+func mtimeBenchCase(scenario mtimeBenchScenario) benchCase {
+	return benchCase{
+		name: "mtime_" + scenario.name,
+		setup: func(tb testing.TB, dir string) {
+			setupMtimeFiles(tb, dir, scenario)
+
+			taskfile := "version: '3'\ntasks:\n  mtime:\n    sources:\n      - tmp/monorepo_bench/**/*\n    generates:\n      - tmp/.marker_task\n    cmds:\n      - touch tmp/.marker_task\n"
+			if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o644); err != nil {
+				tb.Fatalf("write taskfile: %v", err)
+			}
+		},
+		calls: func() []*task.Call {
+			return []*task.Call{{Task: "mtime"}}
+		},
+		check: func(tb testing.TB, stdout, stderr string) {
+			tb.Helper()
+			output := stdout + stderr
+			if !strings.Contains(output, "is up to date") && !strings.Contains(output, "touch tmp/.marker_task") {
+				tb.Fatalf("expected mtime task to run or be up to date, got stdout=%q stderr=%q", stdout, stderr)
+			}
+		},
+	}
+}
+
+func setupMtimeFiles(tb testing.TB, dir string, scenario mtimeBenchScenario) {
+	tb.Helper()
+	root := filepath.Join(dir, "tmp", "monorepo_bench")
+	groups := []string{"apps", "libs", "tools", "services", "packages"}
+	for i := 0; i < scenario.totalFiles; i++ {
+		fileDir := root
+		for level := 0; level < scenario.depth; level++ {
+			if level == 0 {
+				fileDir = filepath.Join(fileDir, groups[i%len(groups)])
+				continue
+			}
+			divisor := len(groups)
+			for n := 1; n < level; n++ {
+				divisor *= 4
+			}
+			fileDir = filepath.Join(fileDir, fmt.Sprintf("level_%d_%d", level, i/divisor%4))
+		}
+		if err := os.MkdirAll(fileDir, 0o755); err != nil {
+			tb.Fatalf("create mtime fixture directory: %v", err)
+		}
+		file := filepath.Join(fileDir, fmt.Sprintf("file_%d.go", i))
+		if err := os.WriteFile(file, []byte("// mtime source\n"), 0o644); err != nil {
+			tb.Fatalf("write mtime fixture: %v", err)
+		}
+	}
+}
+
+func setupMtimeMakeBench(tb testing.TB, dir string, scenario mtimeBenchScenario) string {
+	tb.Helper()
+	setupMtimeFiles(tb, dir, scenario)
+	markerPath := filepath.Join(dir, "tmp", ".marker_make")
+	glob := strings.Repeat("*/", scenario.depth) + "*.go"
+	makefile := fmt.Sprintf("BENCH_DIR := tmp/monorepo_bench\nALL_FILES := $(wildcard $(BENCH_DIR)/%s)\n\n.DEFAULT_GOAL := all\n.PHONY: all\nall: tmp/.marker_make\n\ntmp/.marker_make: $(ALL_FILES)\n\t@mkdir -p $(@D)\n\t@touch $@\n", glob)
+	if err := os.WriteFile(filepath.Join(dir, "Makefile"), []byte(makefile), 0o644); err != nil {
+		tb.Fatalf("write Makefile: %v", err)
+	}
+	return markerPath
+}
+
+// BenchmarkMtimeRivetFull compares Rivet and GNU Make across the larger layouts.
+// Run it explicitly with -bench=BenchmarkMtimeRivetFull; ordinary BenchmarkRivet
+// continues to run only the 500-file case.
+func BenchmarkMtimeRivetFull(b *testing.B) {
+	for _, scenario := range fullMtimeBenchScenarios {
+		rivetCase := mtimeBenchCase(scenario)
+		b.Run(rivetCase.name, func(b *testing.B) {
+			runRivetBenchCase(b, rivetCase)
+		})
+
+		b.Run("make_mtime_"+scenario.name, func(b *testing.B) {
+			b.Helper()
+			dir := b.TempDir()
+			markerPath := setupMtimeMakeBench(b, dir, scenario)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				cmd := exec.Command("make")
+				cmd.Dir = dir
+				if err := cmd.Run(); err != nil {
+					b.Fatalf("make: %v", err)
+				}
+			}
+			b.StopTimer()
+			if _, err := os.Stat(markerPath); err != nil {
+				b.Fatalf("expected make marker to exist: %v", err)
+			}
+		})
 	}
 }
 
@@ -218,61 +437,66 @@ var benchProfileDir = os.Getenv("RIVET_BENCH_PROFILE_DIR")
 func BenchmarkRivet(b *testing.B) {
 	for _, tc := range benchCases {
 		b.Run(tc.name, func(b *testing.B) {
-			dir := b.TempDir()
-			tc.setup(b, dir)
-
-			ctx := context.Background()
-			var stdout, stderr bytes.Buffer
-
-			if benchProfileDir != "" {
-				f, err := os.Create(filepath.Join(benchProfileDir, tc.name+"_cpu.out"))
-				if err != nil {
-					b.Fatalf("create profile file: %v", err)
-				}
-				defer func() { _ = f.Close() }()
-				if err := pprof.StartCPUProfile(f); err != nil {
-					b.Fatalf("start cpu profile: %v", err)
-				}
-				defer pprof.StopCPUProfile()
-			}
-
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				stdout.Reset()
-				stderr.Reset()
-
-				levelVar := &slog.LevelVar{}
-				levelVar.Set(slog.LevelInfo)
-				rlog.Init(rlog.RlogOptions{
-					Stdout: &stdout,
-					Stderr: &stderr,
-					Level:  levelVar,
-					Color:  false,
-				})
-
-				e := task.NewExecutor(
-					task.WithDir(dir),
-					task.WithStdout(&stdout),
-					task.WithStderr(&stderr),
-					task.WithColor(false),
-					task.WithLevelVar(levelVar),
-				)
-				if err := e.Setup(ctx); err != nil {
-					b.Fatalf("setup: %v", err)
-				}
-				if err := e.Run(ctx, tc.calls()...); err != nil {
-					b.Fatalf("run: %v", err)
-				}
-			}
-			b.StopTimer()
-
-			if benchProfileDir != "" {
-				writeHeapProfile(b, filepath.Join(benchProfileDir, tc.name+"_mem.out"))
-			}
-
-			tc.check(b, stdout.String(), stderr.String())
+			runRivetBenchCase(b, tc)
 		})
 	}
+}
+
+func runRivetBenchCase(b *testing.B, tc benchCase) {
+	b.Helper()
+	dir := b.TempDir()
+	tc.setup(b, dir)
+
+	ctx := context.Background()
+	var stdout, stderr bytes.Buffer
+
+	if benchProfileDir != "" {
+		f, err := os.Create(filepath.Join(benchProfileDir, tc.name+"_cpu.out"))
+		if err != nil {
+			b.Fatalf("create profile file: %v", err)
+		}
+		defer func() { _ = f.Close() }()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			b.Fatalf("start cpu profile: %v", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		stdout.Reset()
+		stderr.Reset()
+
+		levelVar := &slog.LevelVar{}
+		levelVar.Set(slog.LevelInfo)
+		rlog.Init(rlog.RlogOptions{
+			Stdout: &stdout,
+			Stderr: &stderr,
+			Level:  levelVar,
+			Color:  false,
+		})
+
+		e := task.NewExecutor(
+			task.WithDir(dir),
+			task.WithStdout(&stdout),
+			task.WithStderr(&stderr),
+			task.WithColor(false),
+			task.WithLevelVar(levelVar),
+		)
+		if err := e.Setup(ctx); err != nil {
+			b.Fatalf("setup: %v", err)
+		}
+		if err := e.Run(ctx, tc.calls()...); err != nil {
+			b.Fatalf("run: %v", err)
+		}
+	}
+	b.StopTimer()
+
+	if benchProfileDir != "" {
+		writeHeapProfile(b, filepath.Join(benchProfileDir, tc.name+"_mem.out"))
+	}
+
+	tc.check(b, stdout.String(), stderr.String())
 }
 
 // writeHeapProfile writes a fresh (GC'd) heap snapshot to path, mirroring

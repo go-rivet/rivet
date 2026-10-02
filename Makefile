@@ -37,7 +37,7 @@ ifeq ($(GOBIN),)
 GOBIN=$(GOPATH)/bin
 endif
 
-.PHONY: all build clean run release test test-all bench generate generate-fixtures mod lint install help $(PLATFORMS)
+.PHONY: all build clean run release test test-all bench bench-all bench-mak generate generate-fixtures mod lint install help $(PLATFORMS)
 
 # Default target runs help to guide the user
 all: help
@@ -77,24 +77,44 @@ test-all:
 	@echo "Running tests..."
 	go test -v -race ./... -tags 'signals watch'
 
-## bench: Run benchmarks with per-case CPU profiling (see ./bench_profiles)
+## bench: Run the selected benchmark (BENCH=BenchmarkRivet, BENCHTIME=3x by default); PROFILE=1 collects profiles
 BENCH_DIR = bench_profiles
-BENCH      ?= .
+BENCH      ?= BenchmarkRivet
+BENCHTIME  ?= 3x
+PROFILE    ?= 0
+BENCH_PROFILE_ENV =
+BENCH_PROFILE_SETUP =
+BENCH_PROFILE_REPORT =
+ifeq ($(PROFILE),1)
+BENCH_PROFILE_ENV = RIVET_BENCH_PROFILE_DIR=$(abspath $(BENCH_DIR))
+BENCH_PROFILE_SETUP = @mkdir -p $(BENCH_DIR) && rm -f $(BENCH_DIR)/*.out
+BENCH_PROFILE_REPORT = @echo "Profiles written to $(BENCH_DIR)/:"; ls -1 $(BENCH_DIR)/*_cpu.out $(BENCH_DIR)/*_mem.out 2>/dev/null | sed 's/^/  /' || echo "  (none found)"; echo "View with: go tool pprof -http=:8080 $(BENCH_DIR)/<profile>.out"
+endif
 bench:
 	@echo "Running benchmarks..."
-	@mkdir -p $(BENCH_DIR)
-	@rm -f $(BENCH_DIR)/*.out
-	RIVET_BENCH_PROFILE_DIR=$(abspath $(BENCH_DIR)) go test ./cmd/rivet/... \
+	$(BENCH_PROFILE_SETUP)
+	$(BENCH_PROFILE_ENV) go test ./cmd/rivet/... \
 		-run='^$$' \
 		-bench='$(BENCH)' \
-		-benchmem
-	@echo ""
-	@echo "Profiles written to $(BENCH_DIR)/:"
-	@ls -1 $(BENCH_DIR)/*_cpu.out $(BENCH_DIR)/*_mem.out 2>/dev/null | sed 's/^/  /' || echo "  (none found)"
-	@echo ""
-	@echo "View a profile as a flame graph with:"
-	@echo "  go tool pprof -http=:8080 $(BENCH_DIR)/print_message_cpu.out"
-	@echo "  go tool pprof -alloc_space  -http=:8080 bench_profiles/print_message_mem.out"
+		-benchmem \
+		-benchtime='$(BENCHTIME)'
+	$(BENCH_PROFILE_REPORT)
+
+## bench-all: Run default and optional Rivet benchmarks, excluding Make comparisons
+bench-all:
+	@echo "Running default Rivet benchmarks..."
+	go test ./cmd/rivet/... -run='^$$' -bench='^BenchmarkRivet$$' -benchmem -benchtime='$(BENCHTIME)'
+	@echo "Running optional Rivet mtime benchmarks..."
+	go test ./cmd/rivet/... -run='^$$' -bench='^BenchmarkMtimeRivetFull$$/^mtime_' -benchmem -benchtime='$(BENCHTIME)'
+	@echo "Running optional Rivet many-task benchmarks..."
+	go test ./cmd/rivet/... -run='^$$' -bench='^BenchmarkManyTasksCompare$$/^rivet_' -benchmem -benchtime='$(BENCHTIME)'
+
+## bench-mak: Run all optional Make comparison benchmarks
+bench-mak:
+	@echo "Running optional Make mtime benchmarks..."
+	go test ./cmd/rivet/... -run='^$$' -bench='^BenchmarkMtimeRivetFull$$/^make_mtime_' -benchmem -benchtime='$(BENCHTIME)'
+	@echo "Running optional Make many-task benchmarks..."
+	go test ./cmd/rivet/... -run='^$$' -bench='^BenchmarkManyTasksCompare$$/^make_' -benchmem -benchtime='$(BENCHTIME)'
 
 ## test-e2e: Run E2E tests (from ../rivet-e2e/catalog)
 
