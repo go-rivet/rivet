@@ -15,6 +15,56 @@ import (
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 )
 
+type timestampValueCache struct {
+	task     *ast.Task
+	value    any
+	snapshot *fingerprint.TimestampSourceSnapshot
+}
+
+func (cache *timestampValueCache) get(t *ast.Task, checker *fingerprint.TimestampChecker) (any, error) {
+	if cache.task != nil && sameTimestampInputs(cache.task, t) {
+		return cache.value, nil
+	}
+	value, snapshot, err := checker.ValueWithSnapshot(t)
+	if err == nil {
+		cache.task = t
+		cache.value = value
+		cache.snapshot = snapshot
+	}
+	return value, err
+}
+
+func (cache *timestampValueCache) clear() {
+	cache.task = nil
+	cache.value = nil
+	cache.snapshot = nil
+}
+
+func sameTimestampInputs(a, b *ast.Task) bool {
+	if a.Task != b.Task || a.Dir != b.Dir {
+		return false
+	}
+	var aMatches, bMatches []*ast.Glob
+	if a.Transform != nil {
+		aMatches = a.Transform.Matches
+	}
+	if b.Transform != nil {
+		bMatches = b.Transform.Matches
+	}
+	if len(aMatches) != len(bMatches) {
+		return false
+	}
+	for i := range aMatches {
+		if aMatches[i].Glob != bMatches[i].Glob || aMatches[i].Negate != bMatches[i].Negate {
+			return false
+		}
+	}
+	if a.Transform == nil || b.Transform == nil {
+		return a.Transform == nil && b.Transform == nil
+	}
+	return a.Transform.Subst == b.Transform.Subst
+}
+
 // CompiledTask returns a copy of a task, but replacing variables in almost all
 // properties using the Go template package.
 func (e *Executor) CompiledTask(call *Call) (*ast.Task, error) {
@@ -69,6 +119,10 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 }
 
 func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, error) {
+	return e.compiledTaskWithTimestampCache(call, evaluateShVars, nil)
+}
+
+func (e *Executor) compiledTaskWithTimestampCache(call *Call, evaluateShVars bool, timestampCache *timestampValueCache) (*ast.Task, error) {
 	origTask, err := e.GetTask(call)
 	if err != nil {
 		return nil, err
@@ -146,9 +200,13 @@ func (e *Executor) compiledTask(call *Call, evaluateShVars bool) (*ast.Task, err
 			Yields:  templater.ReplaceGlobs(origTask.Transform.Yields, cache),
 			Subst:   templater.Replace(origTask.Transform.Subst, cache),
 		}
-		var checker fingerprint.SourcesCheckable = fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
-
-		value, err := checker.Value(&new)
+		checker := fingerprint.NewTimestampChecker(e.TempDir.Fingerprint, e.Dry)
+		var value any
+		if timestampCache != nil {
+			value, err = timestampCache.get(&new, checker)
+		} else {
+			value, err = checker.Value(&new)
+		}
 		if err != nil {
 			return nil, err
 		}

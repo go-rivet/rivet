@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -192,23 +193,24 @@ func nativeMTimeUpToDate(sourceRoot string, outputTime time.Time) (bool, error) 
 func createIssue2853Fixture(tb testing.TB, dir string, fileCount int, fileSize int64) {
 	tb.Helper()
 
-	taskfile := `version: '3'
-
-tasks:
-
-  timestamp-yaml:
-    transform:
-      matches:
-		- path/to/folder/**/*.yaml
-	  yields:
-		- out/timestamp.txt
-    cmds:
-      - printf ok > out/timestamp.txt
-
-  uncached-yaml:
-    cmds:
-      - printf ok > out/uncached.txt
-`
+	taskfile := strings.Join([]string{
+		"version: '3'",
+		"",
+		"tasks:",
+		"",
+		"  timestamp-yaml:",
+		"    transform:",
+		"      matches:",
+		"        - path/to/folder/**/*.yaml",
+		"      yields:",
+		"        - out/timestamp.txt",
+		"    cmds:",
+		"      - printf ok > out/timestamp.txt",
+		"",
+		"  uncached-yaml:",
+		"    cmds:",
+		"      - printf ok > out/uncached.txt",
+	}, "\n")
 	require.NoError(tb, os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o644))
 	require.NoError(tb, os.MkdirAll(filepath.Join(dir, "out"), 0o755))
 

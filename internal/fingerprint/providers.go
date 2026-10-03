@@ -10,8 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/mattn/go-zglob"
 	"golang.org/x/sync/errgroup"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/pattern"
@@ -24,14 +26,27 @@ var ErrNoSourcesMatched = errors.New("fingerprint: source glob pattern matched z
 // matched. All differentiating logic (out-of-date checks, max-time tracking, etc.)
 // is applied afterward by inspecting the collected results.
 type dirReadResult struct {
+	glob    string
 	negate  bool
 	entries []fs.DirEntry
 }
 
-// walkDirWithProvider evaluates an array of task-scoped patterns concurrently. Each
-// pattern is expanded/glob-matched via mvdan.cc/sh/expand, and the resulting matched
-// files are resolved into fs.DirEntry values for the caller to evaluate afterward.
+// walkDirWithProvider evaluates an array of task-scoped patterns concurrently.
 func walkDirWithProvider(ctx context.Context, dir string, globs []*ast.Glob) ([]dirReadResult, error) {
+	if os.Getenv("RIVET_MTIME_GLOB_BACKEND") == "mvdan" {
+		return walkDirWithMVdan(ctx, dir, globs)
+	}
+	results, handled, err := walkDirWithZglob(dir, globs)
+	if err != nil {
+		return nil, err
+	}
+	if handled {
+		return results, nil
+	}
+	return walkDirWithMVdan(ctx, dir, globs)
+}
+
+func walkDirWithMVdan(ctx context.Context, dir string, globs []*ast.Glob) ([]dirReadResult, error) {
 	if len(globs) == 0 {
 		return nil, nil
 	}
@@ -67,7 +82,6 @@ func walkDirWithProvider(ctx context.Context, dir string, globs []*ast.Glob) ([]
 						return os.ReadDir(dirPath)
 					},
 					GlobStar: true,
-					NullGlob: true,
 				}
 				matchedPaths, err := expand.Fields(cfg, words...)
 				if err != nil {
@@ -103,7 +117,7 @@ func walkDirWithProvider(ctx context.Context, dir string, globs []*ast.Glob) ([]
 			}
 
 			mu.Lock()
-			results = append(results, dirReadResult{negate: gPattern.Negate, entries: entries})
+			results = append(results, dirReadResult{glob: gPattern.Glob, negate: gPattern.Negate, entries: entries})
 			mu.Unlock()
 			return nil
 		})
@@ -113,6 +127,34 @@ func walkDirWithProvider(ctx context.Context, dir string, globs []*ast.Glob) ([]
 		return nil, err
 	}
 	return results, nil
+}
+
+func walkDirWithZglob(dir string, globs []*ast.Glob) ([]dirReadResult, bool, error) {
+	results := make([]dirReadResult, len(globs))
+	for i, g := range globs {
+		fullPath := filepathext.SmartJoin(dir, g.Glob)
+		patterns, err := execext.ExpandGlobPatterns(fullPath)
+		if err != nil {
+			return nil, false, nil
+		}
+		var paths []string
+		for _, pattern := range patterns {
+			matches, err := zglob.GlobFollowSymlinks(pattern)
+			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					continue
+				}
+				return nil, false, nil
+			}
+			paths = append(paths, matches...)
+		}
+		entries, err := statMatchedPaths(paths)
+		if err != nil {
+			return nil, true, err
+		}
+		results[i] = dirReadResult{glob: g.Glob, negate: g.Negate, entries: entries}
+	}
+	return results, true, nil
 }
 
 // statMatchedPaths resolves the glob-matched paths returned by expand.Fields into

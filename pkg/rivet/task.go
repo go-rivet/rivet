@@ -159,7 +159,8 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 		}
 	}
 
-	t, err := e.FastCompiledTask(call)
+	timestampCache := &timestampValueCache{}
+	t, err := e.compiledTaskWithTimestampCache(call, false, timestampCache)
 	if err != nil {
 		return err
 	}
@@ -182,10 +183,12 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 		}
 	}
 	call.TaskDotenv.Files = t.Dotenv
-	if _, err := call.TaskDotenv.Load(t.Dir, nil, nil); err != nil {
+	if changed, err := call.TaskDotenv.Load(t.Dir, nil, nil); err != nil {
 		return err
+	} else if changed {
+		timestampCache.clear()
 	}
-	t, err = e.CompiledTask(call)
+	t, err = e.compiledTaskWithTimestampCache(call, true, timestampCache)
 	if err != nil {
 		return err
 	}
@@ -247,7 +250,8 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			if changed, err := call.TaskDotenv.Load(t.Dir, nil, nil); err != nil {
 				return err
 			} else if changed {
-				t, err = e.CompiledTask(call)
+				timestampCache.clear()
+				t, err = e.compiledTaskWithTimestampCache(call, true, timestampCache)
 				if err != nil {
 					return err
 				}
@@ -266,10 +270,15 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			}
 
 			// Get the fingerprinting method to use
-			upToDate, err := fingerprint.IsTaskUpToDate(ctx, t,
+			fingerprintOptions := []fingerprint.CheckerOption{
 				fingerprint.WithTempDir(e.TempDir.Fingerprint),
 				fingerprint.WithDry(e.Dry),
-			)
+			}
+			if timestampCache.snapshot != nil && len(t.Deps) == 0 && len(t.Status) == 0 &&
+				len(t.Preconditions) == 0 && strings.TrimSpace(t.If) == "" {
+				fingerprintOptions = append(fingerprintOptions, fingerprint.WithTimestampSourceSnapshot(timestampCache.snapshot))
+			}
+			upToDate, err := fingerprint.IsTaskUpToDate(ctx, t, fingerprintOptions...)
 			if err != nil {
 				return err
 			}

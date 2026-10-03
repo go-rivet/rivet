@@ -11,6 +11,7 @@ import (
 	"mvdan.cc/sh/moreinterp/coreutils"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
+	"mvdan.cc/sh/v3/shell"
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
@@ -120,6 +121,18 @@ func ExpandLiteral(s string) (string, error) {
 		GlobStar: true,
 	}
 	return expand.Literal(cfg, word)
+}
+
+// ExpandGlobPatterns applies shell field expansion without expanding filesystem
+// globs, leaving the resulting patterns for a glob matcher.
+func ExpandGlobPatterns(s string) ([]string, error) {
+	s = filepath.ToSlash(s)
+	s = strings.ReplaceAll(s, " ", `\ `)
+	fields, err := shell.Fields(s, nil)
+	if err != nil {
+		return nil, err
+	}
+	return fields, nil
 }
 
 // ExpandFields is a wrapper around [expand.Fields]. It will escape the input

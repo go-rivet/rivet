@@ -9,10 +9,11 @@ import (
 type (
 	CheckerOption func(*CheckerConfig)
 	CheckerConfig struct {
-		dry            bool
-		tempDir        string
-		statusChecker  StatusCheckable
-		sourcesChecker SourcesCheckable
+		dry               bool
+		tempDir           string
+		statusChecker     StatusCheckable
+		sourcesChecker    SourcesCheckable
+		timestampSnapshot *TimestampSourceSnapshot
 	}
 )
 
@@ -37,6 +38,12 @@ func WithStatusChecker(checker StatusCheckable) CheckerOption {
 func WithSourcesChecker(checker SourcesCheckable) CheckerOption {
 	return func(config *CheckerConfig) {
 		config.sourcesChecker = checker
+	}
+}
+
+func WithTimestampSourceSnapshot(snapshot *TimestampSourceSnapshot) CheckerOption {
+	return func(config *CheckerConfig) {
+		config.timestampSnapshot = snapshot
 	}
 }
 
@@ -92,7 +99,11 @@ func IsTaskUpToDate(
 
 	// If sources is set, check if they are up-to-date
 	if sourcesIsSet {
-		sourcesUpToDate, err = config.sourcesChecker.IsUpToDate(t)
+		if checker, ok := config.sourcesChecker.(*TimestampChecker); ok && config.timestampSnapshot != nil {
+			sourcesUpToDate, err = checker.IsUpToDateWithSnapshot(t, config.timestampSnapshot)
+		} else {
+			sourcesUpToDate, err = config.sourcesChecker.IsUpToDate(t)
+		}
 		if err != nil {
 			return false, err
 		}
