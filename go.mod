@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/dominikbraun/graph v0.23.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/mattn/go-zglob v0.0.4
+	github.com/mattn/go-zglob v0.0.8
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v3 v3.0.5
