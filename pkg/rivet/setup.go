@@ -271,7 +271,7 @@ func (e *Executor) doVersionChecks() error {
 	}
 
 	// Error if the Taskfile uses a schema version above the current version of Task
-	if schemaVersion.GreaterThan(currentVersion) {
+	if schemaVersion.GreaterThan(currentVersion) && !schemaVersion.Equal(ast.V42) {
 		return &errors.TaskfileVersionCheckError{
 			URI:           e.Taskfile.Location,
 			SchemaVersion: schemaVersion,

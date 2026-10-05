@@ -1,0 +1,10 @@
+# a version newer than the supported schemas is rejected
+! rivet hello
+stderr 'version'
+
+-- Taskfile.yml --
+version: 99
+tasks:
+  hello:
+    cmds:
+      - echo hello

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/dominikbraun/graph"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/sync/errgroup"
@@ -20,6 +21,7 @@ import (
 	"github.com/go-rivet/rivet/internal/templater"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
+	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast/v42"
 )
 
 const (
@@ -412,15 +414,40 @@ func (r *Reader) readNode(ctx context.Context, node Node) (*ast.Taskfile, error)
 		return nil, err
 	}
 
-	var tf ast.Taskfile
-	if err := yaml.Unmarshal(normalizeCommandShortcuts(b), &tf); err != nil {
-		// Decode the taskfile and add the file info the any errors
-		taskfileDecodeErr := &errors.TaskfileDecodeError{}
-		if errors.As(err, &taskfileDecodeErr) {
-			snippetStr := GenerateSnippet(b, taskfileDecodeErr.Line, 2)
-			return nil, taskfileDecodeErr.WithFileInfo(node.Location(), snippetStr)
+	// v42 is parsed from the raw YAML. Older schemas rely on command shortcut
+	// normalisation, which also covers documents that are not valid YAML as written.
+	var document yaml.Node
+	rawErr := yaml.Unmarshal(b, &document)
+	var schemaVersion *semver.Version
+	if rawErr == nil {
+		schemaVersion, err = taskfileSchemaVersion(&document)
+		if err != nil {
+			return nil, r.taskfileDecodeError(errors.NewTaskfileDecodeError(err, &document), node, b)
 		}
-		return nil, &errors.TaskfileInvalidError{URI: filepathext.TryAbsToRel(node.Location()), Err: err}
+	}
+	if rawErr != nil || schemaVersion == nil || !schemaVersion.Equal(ast.V42) {
+		document = yaml.Node{}
+		if err := yaml.Unmarshal(normalizeCommandShortcuts(b), &document); err != nil {
+			return nil, r.taskfileDecodeError(err, node, b)
+		}
+		schemaVersion, err = taskfileSchemaVersion(&document)
+		if err != nil {
+			return nil, r.taskfileDecodeError(errors.NewTaskfileDecodeError(err, &document), node, b)
+		}
+		if rawErr != nil && schemaVersion != nil && schemaVersion.Equal(ast.V42) {
+			return nil, r.taskfileDecodeError(rawErr, node, b)
+		}
+	}
+
+	var tf *ast.Taskfile
+	if schemaVersion != nil && schemaVersion.Equal(ast.V42) {
+		tf, err = v42.Parse(&document)
+	} else {
+		tf = &ast.Taskfile{}
+		err = document.Decode(tf)
+	}
+	if err != nil {
+		return nil, r.taskfileDecodeError(err, node, b)
 	}
 
 	// Check that the Taskfile is set and has a schema version
@@ -441,7 +468,38 @@ func (r *Reader) readNode(ctx context.Context, node Node) (*ast.Taskfile, error)
 		}
 	}
 
-	return &tf, nil
+	return tf, nil
+}
+
+func (r *Reader) taskfileDecodeError(err error, node Node, content []byte) error {
+	// Decode the taskfile and add the file info to any errors.
+	taskfileDecodeErr := &errors.TaskfileDecodeError{}
+	if errors.As(err, &taskfileDecodeErr) {
+		snippetStr := GenerateSnippet(content, taskfileDecodeErr.Line, 2)
+		return taskfileDecodeErr.WithFileInfo(node.Location(), snippetStr)
+	}
+	return &errors.TaskfileInvalidError{URI: filepathext.TryAbsToRel(node.Location()), Err: err}
+}
+
+func taskfileSchemaVersion(node *yaml.Node) (*semver.Version, error) {
+	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
+		node = node.Content[0]
+	}
+	if node.Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		keyNode := node.Content[i]
+		if keyNode.Value != "version" {
+			continue
+		}
+		var version *semver.Version
+		if err := node.Content[i+1].Decode(&version); err != nil {
+			return nil, err
+		}
+		return version, nil
+	}
+	return nil, nil
 }
 
 func normalizeCommandShortcuts(b []byte) []byte {

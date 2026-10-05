@@ -6,6 +6,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/dominikbraun/graph v0.23.0
 	github.com/fsnotify/fsnotify v1.10.1
+	github.com/rogpeppe/go-internal v1.16.0
 	github.com/mattn/go-zglob v0.0.8
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.12.1
@@ -27,5 +28,7 @@ require (
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/u-root/u-root v0.15.1-0.20251208185023-2f8c7e763cf8 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )

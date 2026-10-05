@@ -38,7 +38,7 @@ var benchCases = []benchCase{
 		name: "print_message",
 		setup: func(tb testing.TB, dir string) {
 			tb.Helper()
-			taskfile := "version: '3'\ntasks:\n  default:\n    cmds:\n      - echo \"hello from rivet\"\n"
+			taskfile := "version: '42'\ntasks:\n  default:\n    cmds:\n      - echo \"hello from rivet\"\n"
 			if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o644); err != nil {
 				tb.Fatalf("write taskfile: %v", err)
 			}
@@ -100,7 +100,7 @@ func writeManyTasksTaskfile(tb testing.TB, dir string) {
 	tb.Helper()
 	r := rand.New(rand.NewSource(3))
 	var sb strings.Builder
-	sb.WriteString("version: '3'\n")
+	sb.WriteString("version: '42'\n")
 	sb.WriteString("vars:\n")
 	sb.WriteString("  GLOBAL_VAR_1: \"global value one\"\n")
 	sb.WriteString("  GLOBAL_VAR_2: \"global value two\"\n")
@@ -118,7 +118,7 @@ func writeManyTasksTaskfile(tb testing.TB, dir string) {
 
 		taskVars := append(append([]string{}, manyTasksGlobalVars...), var1, var2)
 		sb.WriteString("    cmds:\n")
-		sb.WriteString("      - echo \"running task: {{.TASK}}\"\n")
+		sb.WriteString("      - 'echo \"running task: {{.TASK}}\"'\n")
 		fmt.Fprintf(&sb, "      - echo \"{{.%s}}\"\n", taskVars[r.Intn(len(taskVars))])
 		fmt.Fprintf(&sb, "      - echo \"{{.%s}}\"\n", taskVars[r.Intn(len(taskVars))])
 		if i%2 == 0 {
@@ -313,7 +313,7 @@ func mtimeBenchCase(scenario mtimeBenchScenario) benchCase {
 		setup: func(tb testing.TB, dir string) {
 			setupMtimeFiles(tb, dir, scenario)
 
-			taskfile := "version: '3'\ntasks:\n  mtime:\n    sources:\n      - tmp/monorepo_bench/**/*\n    generates:\n      - tmp/.marker_task\n    cmds:\n      - touch tmp/.marker_task\n"
+			taskfile := "version: '42'\ntasks:\n  mtime:\n    sources:\n      - tmp/monorepo_bench/**/*\n    generates:\n      - tmp/.marker_task\n    cmds:\n      - touch tmp/.marker_task\n"
 			if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o644); err != nil {
 				tb.Fatalf("write taskfile: %v", err)
 			}

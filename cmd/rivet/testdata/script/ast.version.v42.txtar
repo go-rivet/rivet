@@ -1,0 +1,10 @@
+# version 42 is routed to the v42 parser
+rivet hello
+stdout 'hello from v42'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  hello:
+    cmds:
+      - echo hello from v42

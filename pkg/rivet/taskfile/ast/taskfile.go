@@ -14,6 +14,7 @@ import (
 const NamespaceSeparator = ":"
 
 var V3 = semver.MustParse("3")
+var V42 = semver.MustParse("42")
 
 // ErrIncludedTaskfilesCantHaveDotenvs is returned when a included Taskfile contains dotenvs
 var ErrIncludedTaskfilesCantHaveDotenvs = errors.New("task: Included Taskfiles can't have dotenv declarations. Please, move the dotenv declaration to the main Taskfile")

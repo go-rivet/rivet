@@ -37,10 +37,24 @@ ifeq ($(GOBIN),)
 GOBIN=$(GOPATH)/bin
 endif
 
-.PHONY: all build clean run release test test-all bench bench-all bench-mak generate generate-fixtures mod lint install help $(PLATFORMS)
+.PHONY: all build clean run release test test-42 test-all bench bench-all bench-mak generate generate-fixtures mod lint install help $(PLATFORMS)
 
 # Default target runs help to guide the user
 all: help
+
+# quiet_test: run a verbose go test command; print the PASS/SKIP lines and package
+# results, and for failing tests only, their own output
+define quiet_test
+out=$$(mktemp); $(1) >$$out 2>&1; rc=$$?; \
+awk '\
+/^=== (RUN|CONT|PAUSE|NAME) / { cur=$$3; next } \
+/^ *--- FAIL/ { n=$$3; failed[n]=1; print; next } \
+/^ *--- (PASS|SKIP)/ { print; next } \
+/^(PASS|ok|FAIL)([ \t]|$$)/ { print; cur=""; next } \
+{ buf[cur]=buf[cur] $$0 "\n" } \
+END { for (n in failed) if (length(buf[n])) printf "\n=== output of %s\n%s", n, buf[n]; if (length(buf[""])) printf "\n%s", buf[""] }' $$out; \
+rm -f $$out; exit $$rc
+endef
 
 ## build: Build the binary for the current OS/Architecture
 build: $(BUILD_DIR)/$(BINARY_NAME)
@@ -70,12 +84,17 @@ run: build
 test:
 	@echo "Running tests..." 
 #	gotestsum --format short-verbose -- -failfast -count=1 -run="$(TEST)" ./...
-	gotestsum --format short-verbose -- -count=1 -run="$(TEST)" ./...
+	@$(call quiet_test,go test -v -count=1 -run="$(TEST)" ./...)
+
+## test-42: Run the v42 script tests (TEST=name filters, e.g. TEST=v42_hello)
+test-42:
+	@echo "Running v42 script tests..."
+	@$(call quiet_test,go test -v -count=1 ./cmd/rivet -run '^TestScript/$(TEST)')
 
 ## test-all: Run unit tests and other integration tests
 test-all:
 	@echo "Running tests..."
-	go test -v -race ./... -tags 'signals watch'
+	@$(call quiet_test,go test -v -race ./... -tags 'signals watch')
 
 ## bench: Run the selected benchmark (BENCH=BenchmarkRivet, BENCHTIME=3x by default); PROFILE=1 collects profiles
 BENCH_DIR = bench_profiles

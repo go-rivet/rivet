@@ -580,6 +580,7 @@ func TestTaskVersion(t *testing.T) {
 		{"testdata/version/v1", semver.MustParse("1"), true},
 		{"testdata/version/v2", semver.MustParse("2"), true},
 		{"testdata/version/v3", semver.MustParse("3"), false},
+		{"testdata/version/v42", semver.MustParse("42"), false},
 	}
 
 	for _, test := range tests {

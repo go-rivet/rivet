@@ -1,0 +1,28 @@
+# cmd at all schema locations
+rivet
+stdout 'cmd at task cmd'
+stdout 'cmd at task cmd map'
+stdout 'cmd at task cmds map'
+stdout 'cmd at defer map'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  default:
+    cmds:
+      - task: at_task_cmd
+      - task: at_task_cmd_map
+      - task: at_task_cmds
+      - task: at_defer
+  at_task_cmd:
+    cmd: echo cmd at task cmd
+  at_task_cmd_map:
+    cmd:
+      cmd: echo cmd at task cmd map
+  at_task_cmds:
+    cmds:
+      - cmd: echo cmd at task cmds map
+  at_defer:
+    cmds:
+      - defer:
+          cmd: echo cmd at defer map
