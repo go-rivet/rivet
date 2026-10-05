@@ -24,33 +24,33 @@ func (d *Dep) DeepCopy() *Dep {
 	}
 }
 
+// UnmarshalYAML reads the mapping form of a dependency. Keys are applied one at
+// a time in set, which keeps the field logic independent of how the key/value
+// pairs are produced.
 func (d *Dep) UnmarshalYAML(node *yaml.Node) error {
-	switch node.Kind {
-
-	case yaml.ScalarNode:
-		var task string
-		if err := node.Decode(&task); err != nil {
-			return errors.NewTaskfileDecodeError(err, node)
-		}
-		d.Task = task
-		return nil
-
-	case yaml.MappingNode:
-		for i := 0; i < len(node.Content); i += 2 {
-			keyNode := node.Content[i]
-			valNode := node.Content[i+1]
-
-			switch keyNode.Value {
-			case "task":
-				d.Task = valNode.Value
-			case "for":
-				_ = valNode.Decode(&d.For)
-			case "vars":
-				_ = valNode.Decode(&d.Vars)
-			}
-		}
-		return nil
+	if node.Kind != yaml.MappingNode {
+		return errors.NewTaskfileDecodeError(nil, node).WithTypeMessage("dependency")
 	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if err := d.set(node.Content[i].Value, node.Content[i+1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	return errors.NewTaskfileDecodeError(nil, node).WithTypeMessage("dependency")
+func (d *Dep) set(key string, val *yaml.Node) error {
+	switch key {
+	case "task":
+		d.Task = val.Value
+	case "for":
+		if err := val.Decode(&d.For); err != nil {
+			return errors.NewTaskfileDecodeError(err, val)
+		}
+	case "vars":
+		if err := val.Decode(&d.Vars); err != nil {
+			return errors.NewTaskfileDecodeError(err, val)
+		}
+	}
+	return nil
 }

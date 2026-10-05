@@ -2,7 +2,8 @@
 rivet
 stdout 'cmd at task cmd'
 stdout 'cmd at task cmd map'
-stdout 'cmd at task cmds map'
+stdout 'cmd at task cmds'
+stdout 'cmd at task cmds multiline'
 stdout 'cmd at defer map'
 
 -- Taskfile.yml --
@@ -13,6 +14,7 @@ tasks:
       - task: at_task_cmd
       - task: at_task_cmd_map
       - task: at_task_cmds
+      - task: at_task_cmds_multiline
       - task: at_defer
   at_task_cmd:
     cmd: echo cmd at task cmd
@@ -21,7 +23,11 @@ tasks:
       cmd: echo cmd at task cmd map
   at_task_cmds:
     cmds:
-      - cmd: echo cmd at task cmds map
+      - cmd: echo cmd at task cmds
+  at_task_cmds_multiline:
+    cmds:
+      - cmd: |
+          echo cmd at task cmds multiline
   at_defer:
     cmds:
       - defer:

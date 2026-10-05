@@ -1,0 +1,27 @@
+# deps at all schema locations
+rivet
+stdout 'dep a'
+stdout 'dep b'
+stdout 'dep b v1'
+stdout 'dep for x'
+stdout 'dep for y'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  default:
+    deps:
+      - task: a
+      - task: b
+        vars:
+          V: v1
+      - for: [x, y]
+        task: c
+        vars:
+          I: '{{.ITEM}}'
+  a:
+    cmd: echo dep a
+  b:
+    cmd: echo dep b {{.V}}
+  c:
+    cmd: echo dep for {{.I}}

@@ -19,7 +19,7 @@ vars:
 tasks:
   build:
     desc: d
-    deps: [other, {task: other, vars: {X: 1}}]
+    deps: [{task: other}, {task: other, vars: {X: 1}}]
     vars: {Y: y}
     platforms: [linux/amd64]
     requires: {vars: [{name: Z, enum: [a, b]}]}
