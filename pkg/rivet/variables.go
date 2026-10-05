@@ -305,6 +305,7 @@ func (e *Executor) compiledTaskWithTimestampCache(call *Call, evaluateShVars boo
 					newDep := dep.DeepCopy()
 					newDep.Task = templater.ReplaceWithExtra(dep.Task, cache, extra)
 					newDep.Vars = templater.ReplaceVarsWithExtra(dep.Vars, cache, extra)
+					newDep.Cmd = templater.ReplaceWithExtra(dep.Cmd, cache, depCmdExtra(newDep.Vars, extra))
 					new.Deps = append(new.Deps, newDep)
 				}
 				continue
@@ -312,6 +313,7 @@ func (e *Executor) compiledTaskWithTimestampCache(call *Call, evaluateShVars boo
 			newDep := dep.DeepCopy()
 			newDep.Task = templater.Replace(dep.Task, cache)
 			newDep.Vars = templater.ReplaceVars(dep.Vars, cache)
+			newDep.Cmd = templater.ReplaceWithExtra(dep.Cmd, cache, depCmdExtra(newDep.Vars, nil))
 			new.Deps = append(new.Deps, newDep)
 		}
 	}
@@ -593,4 +595,19 @@ func product(matrix *ast.Matrix) []map[string]any {
 	}
 
 	return result
+}
+
+// depCmdExtra exposes a dependency's static vars, plus the loop variables, to
+// its cmd template.
+func depCmdExtra(vars *ast.Vars, loop map[string]any) map[string]any {
+	extra := make(map[string]any, len(loop)+vars.Len())
+	for k, v := range loop {
+		extra[k] = v
+	}
+	for k, v := range vars.All() {
+		if v.Sh == nil && v.Ref == "" {
+			extra[k] = v.Value
+		}
+	}
+	return extra
 }

@@ -5,6 +5,7 @@ stdout 'cmd at task cmd map'
 stdout 'cmd at task cmds'
 stdout 'cmd at task cmds multiline'
 stdout 'cmd at defer map'
+stdout 'cmd at dep'
 
 -- Taskfile.yml --
 version: 42
@@ -16,6 +17,7 @@ tasks:
       - task: at_task_cmds
       - task: at_task_cmds_multiline
       - task: at_defer
+      - task: at_dep
   at_task_cmd:
     cmd: echo cmd at task cmd
   at_task_cmd_map:
@@ -32,3 +34,8 @@ tasks:
     cmds:
       - defer:
           cmd: echo cmd at defer map
+  at_dep:
+    deps:
+      - cmd: echo cmd at dep
+    cmds:
+      - echo after dep

@@ -244,7 +244,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 		}()
 
 		if len(t.Deps) > 0 {
-			if err := e.runDeps(ctx, t); err != nil {
+			if err := e.runDeps(ctx, t, call); err != nil {
 				return err
 			}
 			if changed, err := call.TaskDotenv.Load(t.Dir, nil, nil); err != nil {
@@ -361,7 +361,7 @@ func (e *Executor) mkdir(t *ast.Task) error {
 	return nil
 }
 
-func (e *Executor) runDeps(ctx context.Context, t *ast.Task) error {
+func (e *Executor) runDeps(ctx context.Context, t *ast.Task, call *Call) error {
 	g := &errgroup.Group{}
 	if e.Failfast || t.Failfast {
 		g, ctx = errgroup.WithContext(ctx)
@@ -370,8 +370,16 @@ func (e *Executor) runDeps(ctx context.Context, t *ast.Task) error {
 	reacquire := e.releaseConcurrencyLimit()
 	defer reacquire()
 
+	taskEnv := env.GetFromVars(t.Vars)
+
 	for _, d := range t.Deps {
 		g.Go(func() error {
+			if d.Cmd != "" {
+				// Run the cmd through the regular command path using a one-cmd view of the task.
+				depTask := *t
+				depTask.Cmds = []*ast.Cmd{{Cmd: d.Cmd}}
+				return e.runCommand(ctx, &depTask, call, 0, taskEnv)
+			}
 			err := e.RunTask(ctx, &Call{Task: d.Task, Vars: d.Vars, Indirect: true, Kind: CallKindDep})
 			if err != nil {
 				return err

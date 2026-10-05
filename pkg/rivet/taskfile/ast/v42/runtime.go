@@ -130,7 +130,7 @@ func depToRuntime(d *Dep) *ast.Dep {
 	if d == nil {
 		return nil
 	}
-	return &ast.Dep{Task: d.Task, For: forToRuntime(d.For), Vars: varsToRuntime(d.Vars)}
+	return &ast.Dep{Task: d.Task, Cmd: d.Cmd, For: forToRuntime(d.For), Vars: varsToRuntime(d.Vars)}
 }
 
 func forToRuntime(f *For) *ast.For {

@@ -9,6 +9,7 @@ import (
 // Dep is a task dependency
 type Dep struct {
 	Task string
+	Cmd  string
 	For  *For
 	Vars *Vars
 }
@@ -19,6 +20,7 @@ func (d *Dep) DeepCopy() *Dep {
 	}
 	return &Dep{
 		Task: d.Task,
+		Cmd:  d.Cmd,
 		For:  d.For.DeepCopy(),
 		Vars: d.Vars.DeepCopy(),
 	}
@@ -36,6 +38,9 @@ func (d *Dep) UnmarshalYAML(node *yaml.Node) error {
 			return err
 		}
 	}
+	if d.Task != "" && d.Cmd != "" {
+		return errors.NewTaskfileDecodeError(nil, node).WithMessage("dependency cannot have both task and cmd")
+	}
 	return nil
 }
 
@@ -43,6 +48,8 @@ func (d *Dep) set(key string, val *yaml.Node) error {
 	switch key {
 	case "task":
 		d.Task = val.Value
+	case "cmd":
+		d.Cmd = val.Value
 	case "for":
 		if err := val.Decode(&d.For); err != nil {
 			return errors.NewTaskfileDecodeError(err, val)

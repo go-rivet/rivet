@@ -9,6 +9,7 @@ import (
 // Dep is a task dependency
 type Dep struct {
 	Task string
+	Cmd  string
 	For  *For
 	Vars *Vars
 }
@@ -19,6 +20,7 @@ func (d *Dep) DeepCopy() *Dep {
 	}
 	return &Dep{
 		Task: d.Task,
+		Cmd:  d.Cmd,
 		For:  d.For.DeepCopy(),
 		Vars: d.Vars.DeepCopy(),
 	}

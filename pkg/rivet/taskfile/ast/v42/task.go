@@ -170,7 +170,9 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 			case "aliases":
 				_ = valNode.Decode(&t.Aliases)
 			case "deps":
-				_ = valNode.Decode(&t.Deps)
+				if err := valNode.Decode(&t.Deps); err != nil {
+					return err
+				}
 			case "sources":
 				_ = valNode.Decode(&sources)
 			case "generates":

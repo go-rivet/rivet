@@ -1,0 +1,46 @@
+# a dep is either a task or a cmd; for and vars apply to both
+rivet
+stdout 'dep cmd plain'
+stdout 'dep cmd vars v1'
+stdout 'dep cmd for x'
+stdout 'dep cmd for y'
+stdout 'dep cmd for vars x-v2'
+stdout 'dep cmd for vars y-v2'
+stdout 'dep task for 1'
+stdout 'dep task for 2'
+
+# a dep cannot have both task and cmd
+! rivet -t Invalid.yml
+stdout 'both task and cmd'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  default:
+    deps:
+      - cmd: echo dep cmd plain
+      - cmd: echo dep cmd vars {{.V}}
+        vars:
+          V: v1
+      - for: [x, y]
+        cmd: echo dep cmd for {{.ITEM}}
+      - for: [x, y]
+        cmd: echo dep cmd for vars {{.W}}
+        vars:
+          W: '{{.ITEM}}-v2'
+      - for: ['1', '2']
+        task: called
+        vars:
+          N: '{{.ITEM}}'
+  called:
+    cmd: echo dep task for {{.N}}
+
+-- Invalid.yml --
+version: 42
+tasks:
+  default:
+    deps:
+      - task: other
+        cmd: echo hi
+  other:
+    cmd: echo other
