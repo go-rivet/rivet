@@ -1,0 +1,56 @@
+# When the root Taskfile is given on the command line, no other Taskfiles in its directory are read.
+rivet --taskfile custom.yml --list-all
+stdout '\* root'
+stdout '\* sub:hello'
+! stdout 'other:'
+
+rivet --taskfile custom.yml root
+stdout 'root custom.yml'
+stdout 'TASKFILE=.*/custom\.yml'
+
+rivet --taskfile custom.yml sub:hello
+stdout 'sub:hello Taskfile.yml'
+stdout 'TASKFILE=.*/sub/Taskfile\.yml'
+
+
+-- custom.yml --
+version: 42
+tasks:
+  root:
+    cmds:
+      - echo {{.TASK}} custom.yml
+      - echo TASKFILE={{.TASKFILE}}
+
+-- Taskfile.yml --
+version: 42
+namespace: other
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} Taskfile.yml
+
+-- taskfile.yml --
+version: 42
+namespace: other2
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} taskfile.yml
+
+-- sub/custom.yml --
+version: 42
+namespace: sub
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} custom.yml
+      - echo TASKFILE={{.TASKFILE}}
+
+-- sub/Taskfile.yml --
+version: 42
+namespace: sub
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} Taskfile.yml
+      - echo TASKFILE={{.TASKFILE}}

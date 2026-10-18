@@ -1,0 +1,140 @@
+# Taskfile locations and namespace paths are independent.
+rivet --list-all
+stdout '\* root'
+stdout '\* one:hello'
+stdout '\* two:hello'
+stdout '\* three:hello'
+stdout '\* four:hello'
+
+rivet root
+stdout 'root Taskfile.yml'
+stdout 'TASKFILE=.*/Taskfile\.yml'
+
+rivet one:hello
+stdout 'one:hello Taskfile.yml'
+stdout 'TASKFILE=.*/one/Taskfile\.yml'
+
+rivet two:hello
+stdout 'two:hello taskfile.yml'
+stdout 'TASKFILE=.*/two/taskfile\.yml'
+
+rivet three:hello
+stdout 'three:hello Taskfile.yaml'
+stdout 'TASKFILE=.*/three/Taskfile\.yaml'
+
+rivet four:hello
+stdout 'four:hello taskfile.yaml'
+stdout 'TASKFILE=.*/four/taskfile\.yaml'
+
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  root:
+    cmds:
+      - echo {{.TASK}} Taskfile.yml
+      - echo TASKFILE={{.TASKFILE}}
+
+
+-- one/Taskfile.yml --
+version: 42
+namespace: one
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} Taskfile.yml
+      - echo TASKFILE={{.TASKFILE}}
+
+-- one/taskfile.yml --
+version: 42
+namespace: one
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} taskfile.yml
+      - echo TASKFILE={{.TASKFILE}}
+
+-- one/Taskfile.yaml --
+version: 42
+namespace: one
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} Taskfile.yaml
+      - echo TASKFILE={{.TASKFILE}}
+
+-- one/taskfile.yaml --
+version: 42
+namespace: one
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} taskfile.yaml
+      - echo TASKFILE={{.TASKFILE}}
+
+
+-- two/Taskfile.dist.yml --
+version: 42
+namespace: two
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} Taskfile.dist.yml
+      - echo TASKFILE={{.TASKFILE}}
+
+-- two/taskfile.yml --
+version: 42
+namespace: two
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} taskfile.yml
+      - echo TASKFILE={{.TASKFILE}}
+
+-- two/Taskfile.yaml --
+version: 42
+namespace: two
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} Taskfile.yaml
+      - echo TASKFILE={{.TASKFILE}}
+
+-- two/taskfile.yaml --
+version: 42
+namespace: two
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} taskfile.yaml
+      - echo TASKFILE={{.TASKFILE}}
+
+
+-- three/Taskfile.yaml --
+version: 42
+namespace: three
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} Taskfile.yaml
+      - echo TASKFILE={{.TASKFILE}}
+
+-- three/taskfile.yaml --
+version: 42
+namespace: three
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} taskfile.yaml
+      - echo TASKFILE={{.TASKFILE}}
+
+
+-- four/taskfile.yaml --
+version: 42
+namespace: four
+tasks:
+  hello:
+    cmds:
+      - echo {{.TASK}} taskfile.yaml
+      - echo TASKFILE={{.TASKFILE}}
+

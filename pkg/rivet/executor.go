@@ -13,6 +13,7 @@ import (
 	"github.com/go-rivet/rivet/internal/output"
 	"github.com/go-rivet/rivet/internal/sort"
 	"github.com/go-rivet/rivet/internal/stringutil"
+	"github.com/go-rivet/rivet/pkg/rivet/namespace"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 )
 
@@ -64,6 +65,7 @@ type (
 
 		// Internal
 		Taskfile           *ast.Taskfile
+		TaskfileDAG        *namespace.DAG
 		Compiler           *Compiler
 		Output             output.Output
 		OutputStyle        ast.Output

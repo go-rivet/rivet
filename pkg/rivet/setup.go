@@ -18,6 +18,7 @@ import (
 	"github.com/go-rivet/rivet/internal/prompt"
 	"github.com/go-rivet/rivet/internal/stringutil"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
+	"github.com/go-rivet/rivet/pkg/rivet/namespace"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 	"github.com/go-rivet/rivet/pkg/rlog"
@@ -30,10 +31,11 @@ func (e *Executor) Setup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	if err := e.setupTempDir(); err != nil {
 		return err
 	}
-	if err := e.readTaskfile(node); err != nil {
+	if err := e.readRootTaskfile(node); err != nil {
 		return err
 	}
 	e.setupStdFiles()
@@ -82,13 +84,53 @@ func (e *Executor) getRootNode() (taskfile.Node, error) {
 func (e *Executor) readTaskfile(node taskfile.Node) error {
 	ctx, cf := context.WithTimeout(e.ctx, e.Timeout)
 	defer cf()
+	reader := e.newTaskfileReader(ctx)
+	graph, err := reader.Read(ctx, node)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return &errors.TaskfileNetworkTimeoutError{URI: node.Location(), Timeout: e.Timeout}
+		}
+		return err
+	}
+	if e.Taskfile, err = graph.Merge(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *Executor) readRootTaskfile(node taskfile.Node) error {
+	ctx, cf := context.WithTimeout(e.ctx, e.Timeout)
+	defer cf()
+
+	reader := e.newTaskfileReader(ctx)
+	rootTaskfile, err := reader.ReadRoot(ctx, node)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return &errors.TaskfileNetworkTimeoutError{URI: node.Location(), Timeout: e.Timeout}
+		}
+		return err
+	}
+	if !rootTaskfile.Version.Equal(ast.V42) {
+		return e.readTaskfile(node)
+	}
+
+	namespace.QualifyTaskNames(rootTaskfile)
+	e.TaskfileDAG, err = namespace.NewDAG(rootTaskfile)
+	if err != nil {
+		return err
+	}
+	e.Taskfile = rootTaskfile
+	return e.TaskfileDAG.Discover(ctx, reader, e.RootDir, e.Entrypoint, e.Taskfile)
+}
+
+func (e *Executor) newTaskfileReader(ctx context.Context) *taskfile.Reader {
 	debugFunc := func(s string) {
 		rlog.Debug(ctx, s)
 	}
 	promptFunc := func(s string) error {
 		return prompt.Prompt(ctx, s, "n", false, true, "y", "yes")
 	}
-	reader := taskfile.NewReader(
+	return taskfile.NewReader(
 		taskfile.WithInsecure(e.Insecure),
 		taskfile.WithDownload(e.Download),
 		taskfile.WithOffline(e.Offline),
@@ -101,17 +143,6 @@ func (e *Executor) readTaskfile(node taskfile.Node) error {
 		taskfile.WithDebugFunc(debugFunc),
 		taskfile.WithPromptFunc(promptFunc),
 	)
-	graph, err := reader.Read(ctx, node)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return &errors.TaskfileNetworkTimeoutError{URI: node.Location(), Timeout: e.Timeout}
-		}
-		return err
-	}
-	if e.Taskfile, err = graph.Merge(); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (e *Executor) setupFuzzyModel() {

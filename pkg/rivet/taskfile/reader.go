@@ -263,6 +263,14 @@ func (r *Reader) Read(ctx context.Context, node Node) (*ast.TaskfileGraph, error
 	return r.graph, nil
 }
 
+// ReadRoot reads and parses node without following its includes.
+func (r *Reader) ReadRoot(ctx context.Context, node Node) (*ast.Taskfile, error) {
+	defer func() {
+		_ = CleanGitCache()
+	}()
+	return r.readNode(ctx, node)
+}
+
 func (r *Reader) debugf(format string, a ...any) {
 	if r.debugFunc != nil {
 		r.debugFunc(fmt.Sprintf(format, a...))

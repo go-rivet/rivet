@@ -3,6 +3,8 @@ task: mytask
 It does things and has optional and required variables.
 
 vars:
+  NAMESPACE: ""
+  TASKNAME: "mytask"
   OPTIONAL_VAR: "hello"
 
 requires:

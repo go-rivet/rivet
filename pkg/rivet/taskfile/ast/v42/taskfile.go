@@ -21,17 +21,18 @@ var ErrIncludedTaskfilesCantHaveDotenvs = errors.New("task: Included Taskfiles c
 
 // Taskfile is the abstract syntax tree for a Taskfile
 type Taskfile struct {
-	Location string
-	Version  *semver.Version
-	Output   Output
-	Includes *Includes
-	Set      []string
-	Shopt    []string
-	Vars     *Vars
-	Tasks    *Tasks
-	Dotenv   []string
-	Run      string
-	Interval time.Duration
+	Location  string
+	Version   *semver.Version
+	Namespace string
+	Output    Output
+	Includes  *Includes
+	Set       []string
+	Shopt     []string
+	Vars      *Vars
+	Tasks     *Tasks
+	Dotenv    []string
+	Run       string
+	Interval  time.Duration
 }
 
 // Merge merges the second Taskfile into the first
@@ -62,21 +63,23 @@ func (tf *Taskfile) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.MappingNode:
 		var taskfile struct {
-			Version  *semver.Version
-			Output   Output
-			Includes *Includes
-			Set      []string
-			Shopt    []string
-			Vars     *Vars
-			Tasks    *Tasks
-			Dotenv   []string
-			Run      string
-			Interval time.Duration
+			Version   *semver.Version
+			Namespace string
+			Output    Output
+			Includes  *Includes
+			Set       []string
+			Shopt     []string
+			Vars      *Vars
+			Tasks     *Tasks
+			Dotenv    []string
+			Run       string
+			Interval  time.Duration
 		}
 		if err := node.Decode(&taskfile); err != nil {
 			return errors.NewTaskfileDecodeError(err, node)
 		}
 		tf.Version = taskfile.Version
+		tf.Namespace = taskfile.Namespace
 		tf.Output = taskfile.Output
 		tf.Includes = taskfile.Includes
 		tf.Set = taskfile.Set

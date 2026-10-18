@@ -1946,9 +1946,9 @@ func TestTaskDotenvGenerated(t *testing.T) {
 			},
 		},
 	}
+	// The cases share gen-env.txt in the same directory, so they must not run in parallel.
 	for _, test := range tt {
 		t.Run("", func(t *testing.T) {
-			t.Parallel()
 			test.Run(t)
 		})
 	}

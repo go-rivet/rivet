@@ -3,6 +3,8 @@ task: with-sh-var
 Task with shell variable
 
 vars:
+  NAMESPACE: ""
+  TASKNAME: "with-sh-var"
   DYNAMIC_VAR: sh: echo "world"
   STATIC_VAR: "hello"
 

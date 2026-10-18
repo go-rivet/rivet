@@ -2,9 +2,11 @@ package v42_test
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
@@ -60,5 +62,30 @@ func TestParseRejectsOtherVersions(t *testing.T) {
 	}
 	if _, err := v42.Parse(&node); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestParseNamespace(t *testing.T) {
+	t.Parallel()
+
+	var node yaml.Node
+	require.NoError(t, yaml.Unmarshal([]byte("version: 42\nnamespace: one:two\n"), &node))
+
+	taskfile, err := v42.Parse(&node)
+	require.NoError(t, err)
+	require.Equal(t, "one:two", taskfile.Namespace)
+}
+
+func TestParseRejectsNamespacesWithEmptyPathComponents(t *testing.T) {
+	t.Parallel()
+
+	for _, namespace := range []string{":one", "one:", "one::two"} {
+		t.Run(namespace, func(t *testing.T) {
+			var node yaml.Node
+			require.NoError(t, yaml.Unmarshal([]byte("version: 42\nnamespace: "+strconv.Quote(namespace)+"\n"), &node))
+
+			_, err := v42.Parse(&node)
+			require.Error(t, err)
+		})
 	}
 }

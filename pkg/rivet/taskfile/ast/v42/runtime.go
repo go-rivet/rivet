@@ -9,8 +9,9 @@ import (
 
 func (tf *Taskfile) toRuntime() *ast.Taskfile {
 	return &ast.Taskfile{
-		Location: tf.Location,
-		Version:  tf.Version,
+		Location:  tf.Location,
+		Version:   tf.Version,
+		Namespace: tf.Namespace,
 		Output: ast.Output{
 			Name: tf.Output.Name,
 			Group: ast.OutputGroup{

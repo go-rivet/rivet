@@ -17,6 +17,9 @@ type Call struct {
 	Vars     *ast.Vars
 	Indirect bool // True if the task was called by another task
 	Kind     CallKind
+	// Taskfile is the location of the Taskfile of the calling task. Namespace
+	// relative calls prefer the task defined in that Taskfile.
+	Taskfile string
 
 	TaskDotenv DotEnv
 }

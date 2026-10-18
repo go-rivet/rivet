@@ -2,6 +2,10 @@ task: foo
 
 (task does not have description or summary)
 
+vars:
+  NAMESPACE: ""
+  TASKNAME: "foo"
+
 aliases:
  - f
  - x

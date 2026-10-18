@@ -141,6 +141,24 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 	}
 	ctx = rlog.WithTrace(ctx, traceID, rlog.NewSpanID(), parentSpanID)
 
+	// Tasks with the same name defined by several Taskfiles in one namespace
+	// all run for a direct call. A call made from within one of those
+	// Taskfiles resolves to that Taskfile's task only.
+	entries := e.TaskfileDAG.Resolve(call.Task, call.Taskfile)
+	if len(entries) > 1 {
+		for _, entry := range entries {
+			pinned := *call
+			pinned.Taskfile = entry.Taskfile.Location
+			if err := e.RunTask(ctx, &pinned); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if len(entries) == 1 {
+		call.Taskfile = entries[0].Taskfile.Location
+	}
+
 	if call.Kind == "" {
 		call.Kind = CallKindDirect
 	}
@@ -380,7 +398,7 @@ func (e *Executor) runDeps(ctx context.Context, t *ast.Task, call *Call) error {
 				depTask.Cmds = []*ast.Cmd{{Cmd: d.Cmd}}
 				return e.runCommand(ctx, &depTask, call, 0, taskEnv)
 			}
-			err := e.RunTask(ctx, &Call{Task: d.Task, Vars: d.Vars, Indirect: true, Kind: CallKindDep})
+			err := e.RunTask(ctx, &Call{Task: d.Task, Vars: d.Vars, Indirect: true, Kind: CallKindDep, Taskfile: taskfileLocation(t)})
 			if err != nil {
 				return err
 			}
@@ -440,7 +458,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		reacquire := e.releaseConcurrencyLimit()
 		defer reacquire()
 
-		err := e.RunTask(ctx, &Call{Task: cmd.Task, Vars: cmd.Vars, Indirect: true, Kind: CallKindCmd})
+		err := e.RunTask(ctx, &Call{Task: cmd.Task, Vars: cmd.Vars, Indirect: true, Kind: CallKindCmd, Taskfile: taskfileLocation(t)})
 		var exitCode interp.ExitStatus
 		if errors.As(err, &exitCode) && cmd.IgnoreError {
 			rlog.Debugf(ctx, "task: [%s] task error ignored: %v\n", t.Name(), err)
@@ -560,6 +578,9 @@ func (e *Executor) FindMatchingTasks(call *Call) ([]*MatchingTask, error) {
 		return nil, nil
 	}
 	var matchingTasks []*MatchingTask
+	if entries := e.TaskfileDAG.Resolve(call.Task, call.Taskfile); len(entries) > 0 {
+		return []*MatchingTask{{Task: entries[0].Task}}, nil
+	}
 	// If there is a direct match, return it
 	if task, ok := e.Taskfile.Tasks.Get(call.Task); ok {
 		matchingTasks = append(matchingTasks, &MatchingTask{Task: task, Wildcards: nil})
@@ -695,4 +716,11 @@ func shouldRunOnCurrentPlatform(platforms []*ast.Platform) bool {
 		}
 	}
 	return false
+}
+
+func taskfileLocation(t *ast.Task) string {
+	if t == nil || t.Location == nil {
+		return ""
+	}
+	return t.Location.Taskfile
 }

@@ -4,6 +4,10 @@ summary of task-with-summary - line 1
 line 2
 line 3
 
+vars:
+  NAMESPACE: ""
+  TASKNAME: "task-with-summary"
+
 dependencies:
  - dependent-task-1
  - dependent-task-2
@@ -17,6 +21,10 @@ commands:
 task: other-task-with-summary
 
 summary of other-task-with-summary
+
+vars:
+  NAMESPACE: ""
+  TASKNAME: "other-task-with-summary"
 
 commands:
  - echo 'other-task-with-summary was executed'

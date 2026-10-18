@@ -36,3 +36,19 @@ func TestReadNodeSelectsSchemaParser(t *testing.T) {
 	}
 
 }
+
+func TestReadRootDoesNotReadIncludes(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	taskfile := "version: '42'\nnamespace: one:two\nincludes:\n  missing: missing.yml\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o644))
+
+	node := &FileNode{
+		baseNode:   NewBaseNode(dir),
+		entrypoint: filepath.Join(dir, "Taskfile.yml"),
+	}
+	got, err := NewReader().ReadRoot(context.Background(), node)
+	require.NoError(t, err)
+	require.Equal(t, "one:two", got.Namespace)
+}

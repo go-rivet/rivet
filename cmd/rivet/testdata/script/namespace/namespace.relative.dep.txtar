@@ -1,0 +1,45 @@
+# A dep on a namespace relative task only runs the task from the calling Taskfile,
+# even though the same task name is merged from several Taskfiles.
+rivet task:merge:build
+stdout -count=1 'one build'
+stdout -count=1 'one prepare'
+! stdout 'two prepare'
+! stdout 'three prepare'
+
+# The merged task is listed once.
+rivet --list-all
+stdout -count=1 '\* task:merge:build'
+stdout -count=1 '\* task:merge:prepare'
+
+-- Taskfile.yml --
+version: 42
+tasks: {}
+
+-- one/Taskfile.yml --
+version: 42
+namespace: task:merge
+tasks:
+  prepare:
+    cmds:
+      - echo one prepare
+  build:
+    deps:
+      - task: prepare
+    cmds:
+      - echo one build
+
+-- two/Taskfile.yml --
+version: 42
+namespace: task:merge
+tasks:
+  prepare:
+    cmds:
+      - echo two prepare
+
+-- three/Taskfile.yml --
+version: 42
+namespace: task:merge
+tasks:
+  prepare:
+    cmds:
+      - echo three prepare

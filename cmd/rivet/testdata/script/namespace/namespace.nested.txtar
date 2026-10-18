@@ -1,0 +1,91 @@
+# Taskfile locations and namespace paths are independent.
+rivet --list-all
+stdout '\* root'
+stdout '\* tools:build'
+stdout '\* release:production:publish'
+
+rivet root
+stdout 'root task'
+stdout 'TASK=root'
+stdout 'NAMESPACE='
+stdout 'TASKNAME=root'
+stdout 'TASK_DIR=.+'
+stdout 'TASKFILE=.*/Taskfile\.yml'
+stdout 'TASKFILE_DIR=.+'
+stdout 'USER_WORKING_DIR=.+'
+stdout 'ROOT_DIR=.+'
+stdout 'ROOT_TASKFILE=.*/Taskfile\.yml'
+
+rivet tools:build
+stdout 'tools build task'
+stdout 'TASK=tools:build'
+stdout 'NAMESPACE=tools'
+stdout 'TASKNAME=build'
+stdout 'TASK_DIR=.+'
+stdout 'TASKFILE=.*/tools/Taskfile\.yml'
+stdout 'TASKFILE_DIR=.*/tools'
+stdout 'USER_WORKING_DIR=.+'
+stdout 'ROOT_DIR=.+'
+stdout 'ROOT_TASKFILE=.*/Taskfile\.yml'
+
+rivet release:production:publish
+stdout 'release publish task'
+stdout 'TASK=release:production:publish'
+stdout 'NAMESPACE=release:production'
+stdout 'TASKNAME=publish'
+stdout 'TASK_DIR=.+'
+stdout 'TASKFILE=.*/deeply/nested/project/taskfiles/Taskfile\.yml'
+stdout 'TASKFILE_DIR=.*/deeply/nested/project/taskfiles'
+stdout 'USER_WORKING_DIR=.+'
+stdout 'ROOT_DIR=.+'
+stdout 'ROOT_TASKFILE=.*/Taskfile\.yml'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  root:
+    cmds:
+      - echo root task
+      - echo TASK={{.TASK}}
+      - echo NAMESPACE={{.NAMESPACE}}
+      - echo TASKNAME={{.TASKNAME}}
+      - echo TASK_DIR={{.TASK_DIR}}
+      - echo TASKFILE={{.TASKFILE}}
+      - echo TASKFILE_DIR={{.TASKFILE_DIR}}
+      - echo USER_WORKING_DIR={{.USER_WORKING_DIR}}
+      - echo ROOT_DIR={{.ROOT_DIR}}
+      - echo ROOT_TASKFILE={{.ROOT_TASKFILE}}
+
+-- tools/Taskfile.yml --
+version: 42
+namespace: tools
+tasks:
+  build:
+    cmds:
+      - echo tools build task
+      - echo TASK={{.TASK}}
+      - echo NAMESPACE={{.NAMESPACE}}
+      - echo TASKNAME={{.TASKNAME}}
+      - echo TASK_DIR={{.TASK_DIR}}
+      - echo TASKFILE={{.TASKFILE}}
+      - echo TASKFILE_DIR={{.TASKFILE_DIR}}
+      - echo USER_WORKING_DIR={{.USER_WORKING_DIR}}
+      - echo ROOT_DIR={{.ROOT_DIR}}
+      - echo ROOT_TASKFILE={{.ROOT_TASKFILE}}
+
+-- deeply/nested/project/taskfiles/Taskfile.yml --
+version: 42
+namespace: release:production
+tasks:
+  publish:
+    cmds:
+      - echo release publish task
+      - echo TASK={{.TASK}}
+      - echo NAMESPACE={{.NAMESPACE}}
+      - echo TASKNAME={{.TASKNAME}}
+      - echo TASK_DIR={{.TASK_DIR}}
+      - echo TASKFILE={{.TASKFILE}}
+      - echo TASKFILE_DIR={{.TASKFILE_DIR}}
+      - echo USER_WORKING_DIR={{.USER_WORKING_DIR}}
+      - echo ROOT_DIR={{.ROOT_DIR}}
+      - echo ROOT_TASKFILE={{.ROOT_TASKFILE}}

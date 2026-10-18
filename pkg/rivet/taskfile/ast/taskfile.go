@@ -21,17 +21,18 @@ var ErrIncludedTaskfilesCantHaveDotenvs = errors.New("task: Included Taskfiles c
 
 // Taskfile is the abstract syntax tree for a Taskfile
 type Taskfile struct {
-	Location string
-	Version  *semver.Version
-	Output   Output
-	Includes *Includes
-	Set      []string
-	Shopt    []string
-	Vars     *Vars
-	Tasks    *Tasks
-	Dotenv   []string
-	Run      string
-	Interval time.Duration
+	Location  string
+	Version   *semver.Version
+	Namespace string
+	Output    Output
+	Includes  *Includes
+	Set       []string
+	Shopt     []string
+	Vars      *Vars
+	Tasks     *Tasks
+	Dotenv    []string
+	Run       string
+	Interval  time.Duration
 }
 
 // Merge merges the second Taskfile into the first

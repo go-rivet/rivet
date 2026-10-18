@@ -1,0 +1,24 @@
+# A v42 root Taskfile can declare a namespace for all of its tasks.
+rivet --list-all
+stdout '\* one:two:hello'
+stdout '\* one:two:world'
+
+rivet one:two:hello
+stdout 'hello from namespaced root'
+stdout 'TASK=one:two:hello'
+stdout 'NAMESPACE=one:two'
+stdout 'TASKNAME=hello'
+
+-- Taskfile.yml --
+version: 42
+namespace: one:two
+tasks:
+  hello:
+    cmds:
+      - echo hello from namespaced root
+      - echo TASK={{.TASK}}
+      - echo NAMESPACE={{.NAMESPACE}}
+      - echo TASKNAME={{.TASKNAME}}
+  world:
+    cmds:
+      - echo world from namespaced root

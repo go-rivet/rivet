@@ -260,7 +260,7 @@ func (c *Compiler) ResetCache() {
 }
 
 func (c *Compiler) getSpecialVars(t *ast.Task, call *Call) *ast.Vars {
-	vars := ast.NewVarsWithCapacity(10 + 4)
+	vars := ast.NewVarsWithCapacity(10 + 7)
 
 	// Base system variables
 	// Use filepath.ToSlash for all paths to ensure consistent forward slashes
@@ -275,11 +275,15 @@ func (c *Compiler) getSpecialVars(t *ast.Task, call *Call) *ast.Vars {
 	// Task-specific contextual variables
 	if t != nil {
 		vars.Set("TASK", ast.Var{Value: t.Task})
+		vars.Set("NAMESPACE", ast.Var{Value: t.Namespace})
+		vars.Set("TASKNAME", ast.Var{Value: taskLocalName(t)})
 		vars.Set("TASK_DIR", ast.Var{Value: filepath.ToSlash(filepathext.SmartJoin(c.Dir, t.Dir))})
 		vars.Set("TASKFILE", ast.Var{Value: filepath.ToSlash(t.Location.Taskfile)})
 		vars.Set("TASKFILE_DIR", ast.Var{Value: filepath.ToSlash(filepath.Dir(t.Location.Taskfile))})
 	} else {
 		vars.Set("TASK", ast.Var{Value: ""})
+		vars.Set("NAMESPACE", ast.Var{Value: ""})
+		vars.Set("TASKNAME", ast.Var{Value: ""})
 		vars.Set("TASK_DIR", ast.Var{Value: ""})
 		vars.Set("TASKFILE", ast.Var{Value: ""})
 		vars.Set("TASKFILE_DIR", ast.Var{Value: ""})
@@ -293,4 +297,11 @@ func (c *Compiler) getSpecialVars(t *ast.Task, call *Call) *ast.Vars {
 	}
 
 	return vars
+}
+
+func taskLocalName(task *ast.Task) string {
+	if localName, ok := strings.CutPrefix(task.Task, task.Namespace+ast.NamespaceSeparator); ok {
+		return localName
+	}
+	return task.Task
 }

@@ -1,3 +1,7 @@
 task: foobar
 
 description
+
+vars:
+  NAMESPACE: ""
+  TASKNAME: "foo"

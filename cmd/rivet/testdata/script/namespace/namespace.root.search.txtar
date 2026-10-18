@@ -1,0 +1,31 @@
+# A v42 root Taskfile is discovered three directories above the working directory.
+
+mkdir one
+mkdir one/two
+mkdir one/two/three
+cd one/two/three
+
+rivet --list-all
+stdout '\* hello'
+stdout '\* world'
+
+rivet hello
+stdout 'hello from discovered root namespace'
+stdout 'TASKFILE=.*/Taskfile\.yml'
+stdout 'USER_WORKING_DIR=.*/one/two/three'
+stdout 'ROOT_DIR=.+'
+stdout 'ROOT_TASKFILE=.*/Taskfile\.yml'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  hello:
+    cmds:
+      - echo hello from discovered root namespace
+      - echo TASKFILE={{.TASKFILE}}
+      - echo USER_WORKING_DIR={{.USER_WORKING_DIR}}
+      - echo ROOT_DIR={{.ROOT_DIR}}
+      - echo ROOT_TASKFILE={{.ROOT_TASKFILE}}
+  world:
+    cmds:
+      - echo world
