@@ -481,7 +481,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 
 		outputWrapper := e.Output
 		if t.Interactive {
-			outputWrapper = output.Interleaved{}
+			outputWrapper = output.Passthrough{}
 		}
 		vars, err := e.Compiler.FastGetVariables(e.ctx, t, call)
 		outputTemplater := &templater.Cache{Vars: vars}

@@ -20,12 +20,30 @@ func TestInterleaved(t *testing.T) {
 
 	var b bytes.Buffer
 	var o output.Output = output.Interleaved{}
-	w, _, _ := o.WrapWriter(&b, io.Discard, "", nil)
+	w, _, cleanup := o.WrapWriter(&b, io.Discard, "", nil)
 
 	_, _ = fmt.Fprintln(w, "foo\nbar")
 	assert.Equal(t, "foo\nbar\n", b.String())
 	_, _ = fmt.Fprintln(w, "baz")
 	assert.Equal(t, "foo\nbar\nbaz\n", b.String())
+
+	// Partial lines are held until completed or the writer is closed.
+	_, _ = fmt.Fprint(w, "par")
+	assert.Equal(t, "foo\nbar\nbaz\n", b.String())
+	_, _ = fmt.Fprint(w, "tial\nrest")
+	assert.Equal(t, "foo\nbar\nbaz\npartial\n", b.String())
+	require.NoError(t, cleanup(nil))
+	assert.Equal(t, "foo\nbar\nbaz\npartial\nrest", b.String())
+}
+
+func TestPassthrough(t *testing.T) {
+	t.Parallel()
+
+	var b bytes.Buffer
+	w, _, _ := output.Passthrough{}.WrapWriter(&b, io.Discard, "", nil)
+
+	_, _ = fmt.Fprint(w, "prompt: ")
+	assert.Equal(t, "prompt: ", b.String())
 }
 
 func TestGroup(t *testing.T) {

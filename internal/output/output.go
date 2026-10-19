@@ -27,6 +27,11 @@ func BuildFor(o *ast.Output) (Output, error) {
 			return nil, err
 		}
 		return Interleaved{}, nil
+	case "passthrough":
+		if err := checkOutputGroupUnset(o); err != nil {
+			return nil, err
+		}
+		return Passthrough{}, nil
 	case "group":
 		return Group{
 			Begin:     o.Group.Begin,
