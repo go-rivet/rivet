@@ -61,8 +61,8 @@ func TestQualifyTaskNames(t *testing.T) {
 			&ast.TaskElement{
 				Key: "hello",
 				Value: &ast.Task{
-					Cmds: []*ast.Cmd{{Task: "world"}},
-					Deps: []*ast.Dep{{Task: "world"}},
+					Cmds: []*ast.Cmd{{Task: "world"}, {Task: ":root"}, {Task: "one:two:world"}},
+					Deps: []*ast.Dep{{Task: "world"}, {Task: ":root"}, {Task: "one:two:world"}},
 				},
 			},
 			&ast.TaskElement{Key: "world", Value: &ast.Task{}},
@@ -76,6 +76,10 @@ func TestQualifyTaskNames(t *testing.T) {
 	require.Equal(t, "one:two", hello.Namespace)
 	require.Equal(t, "one:two:world", hello.Cmds[0].Task)
 	require.Equal(t, "one:two:world", hello.Deps[0].Task)
+	require.Equal(t, ":root", hello.Cmds[1].Task)
+	require.Equal(t, ":root", hello.Deps[1].Task)
+	require.Equal(t, ":one:two:world", hello.Cmds[2].Task)
+	require.Equal(t, ":one:two:world", hello.Deps[2].Task)
 }
 
 func TestDAGResolvesDuplicateTasks(t *testing.T) {

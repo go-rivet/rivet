@@ -1,0 +1,43 @@
+# Task name restrictions
+! rivet pre:pare
+stderr 'does not exist'
+
+! rivet :prepare
+stderr 'does not exist'
+
+! rivet prepare:
+stderr 'does not exist'
+
+# Namespaced Taskfiles apply the same restriction to task definitions.
+! rivet ns:rooted
+stderr 'does not exist'
+
+! rivet rooted
+stderr 'does not exist'
+
+! rivet ns:sub:name
+stderr 'does not exist'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  pre:pare:
+    cmds:
+      - echo prepare
+  prepare::
+    cmds:
+      - echo prepare
+  :prepare:
+    cmds:
+      - echo prepare
+
+-- ns/Taskfile.yml --
+version: 42
+namespace: ns
+tasks:
+  :rooted:
+    cmds:
+      - echo rooted
+  sub:name:
+    cmds:
+      - echo name

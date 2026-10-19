@@ -129,6 +129,8 @@ func (e *Executor) splitRegularAndWatchCalls(calls ...*Call) (regularCalls []*Ca
 
 // RunTask runs a task by its name
 func (e *Executor) RunTask(ctx context.Context, call *Call) error {
+	normalizeTaskCallScope(call)
+
 	// Attach trace/span identifiers so logs produced by this task carry them.
 	// The trace ID and parent span are inherited from the caller (if any) so
 	// dependent/sub-task runs share a trace and record the calling task's span,
@@ -577,18 +579,25 @@ func (e *Executor) FindMatchingTasks(call *Call) ([]*MatchingTask, error) {
 	if call == nil {
 		return nil, nil
 	}
+	normalizeTaskCallScope(call)
 	var matchingTasks []*MatchingTask
 	if entries := e.TaskfileDAG.Resolve(call.Task, call.Taskfile); len(entries) > 0 {
-		return []*MatchingTask{{Task: entries[0].Task}}, nil
+		for _, entry := range entries {
+			if e.TaskfileDAG == nil || validTaskName(entry.Task) {
+				return []*MatchingTask{{Task: entry.Task}}, nil
+			}
+		}
 	}
 	// If there is a direct match, return it
 	if task, ok := e.Taskfile.Tasks.Get(call.Task); ok {
-		matchingTasks = append(matchingTasks, &MatchingTask{Task: task, Wildcards: nil})
-		return matchingTasks, nil
+		if e.TaskfileDAG == nil || validTaskName(task) {
+			matchingTasks = append(matchingTasks, &MatchingTask{Task: task, Wildcards: nil})
+			return matchingTasks, nil
+		}
 	}
 	var aliasedTasks []string
 	for task := range e.Taskfile.Tasks.Values(nil) {
-		if slices.Contains(task.Aliases, call.Task) {
+		if (e.TaskfileDAG == nil || validTaskName(task)) && slices.Contains(task.Aliases, call.Task) {
 			aliasedTasks = append(aliasedTasks, task.Task)
 			matchingTasks = append(matchingTasks, &MatchingTask{Task: task, Wildcards: nil})
 		}
@@ -608,14 +617,37 @@ func (e *Executor) FindMatchingTasks(call *Call) ([]*MatchingTask, error) {
 
 	// Attempt a wildcard match
 	for _, value := range e.Taskfile.Tasks.All(nil) {
-		if match, wildcards := value.WildcardMatch(call.Task); match {
-			matchingTasks = append(matchingTasks, &MatchingTask{
-				Task:      value,
-				Wildcards: wildcards,
-			})
+		if e.TaskfileDAG == nil || validTaskName(value) {
+			if match, wildcards := value.WildcardMatch(call.Task); match {
+				matchingTasks = append(matchingTasks, &MatchingTask{
+					Task:      value,
+					Wildcards: wildcards,
+				})
+			}
 		}
 	}
 	return matchingTasks, nil
+}
+
+func validTaskName(task *ast.Task) bool {
+	if task == nil {
+		return false
+	}
+	name := task.Task
+	if task.Namespace != "" {
+		name = strings.TrimPrefix(name, task.Namespace+ast.NamespaceSeparator)
+	}
+	return !strings.Contains(name, ast.NamespaceSeparator)
+}
+
+func normalizeTaskCallScope(call *Call) {
+	if call == nil {
+		return
+	}
+	if rootName, ok := strings.CutPrefix(call.Task, ast.NamespaceSeparator); ok {
+		call.Task = rootName
+		call.Taskfile = ""
+	}
 }
 
 // GetTask will return the task with the name matching the given call from the taskfile.

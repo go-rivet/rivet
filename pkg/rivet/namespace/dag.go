@@ -155,12 +155,12 @@ func QualifyTaskNames(taskfile *ast.Taskfile) {
 		}
 		for _, dependency := range task.Deps {
 			if dependency != nil && dependency.Task != "" {
-				dependency.Task = qualifyTaskName(dependency.Task, taskfile.Namespace)
+				dependency.Task = qualifyTaskReference(dependency.Task, taskfile.Namespace)
 			}
 		}
 		for _, command := range task.Cmds {
 			if command != nil && command.Task != "" {
-				command.Task = qualifyTaskName(command.Task, taskfile.Namespace)
+				command.Task = qualifyTaskReference(command.Task, taskfile.Namespace)
 			}
 		}
 		for i, alias := range task.Aliases {
@@ -168,7 +168,8 @@ func QualifyTaskNames(taskfile *ast.Taskfile) {
 		}
 
 		task.Namespace = taskfile.Namespace
-		task.Task = qualifyTaskName(name, taskfile.Namespace)
+		// Definitions are joined literally: only references may use a leading ":".
+		task.Task = taskfile.Namespace + ast.NamespaceSeparator + name
 		tasks.Set(task.Task, task)
 	}
 	taskfile.Tasks = tasks
@@ -188,4 +189,14 @@ func qualifyTaskName(name string, namespace string) string {
 		return localName
 	}
 	return namespace + ast.NamespaceSeparator + name
+}
+
+func qualifyTaskReference(name string, namespace string) string {
+	if rootName, ok := strings.CutPrefix(name, ast.NamespaceSeparator); ok {
+		return ast.NamespaceSeparator + rootName
+	}
+	if strings.Contains(name, ast.NamespaceSeparator) {
+		return ast.NamespaceSeparator + name
+	}
+	return qualifyTaskName(name, namespace)
 }

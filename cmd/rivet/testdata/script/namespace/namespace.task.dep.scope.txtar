@@ -1,0 +1,120 @@
+# Task dep scope: task local.
+rivet task:merge:one
+! stdout 'root prepare'
+! stdout 'root build'
+stdout -count=1 'one prepare'
+stdout -count=1 'one build'
+! stdout 'two prepare'
+! stdout 'two build'
+! stdout 'three prepare'
+! stdout 'four prepare'
+
+# Task dep scope: task root.
+rivet task:merge:two
+stdout -count=1 'root prepare'
+! stdout 'root build'
+! stdout 'one prepare'
+! stdout 'one build'
+! stdout 'two prepare'
+! stdout 'three prepare'
+! stdout 'four prepare'
+stdout -count=1 'two build'
+
+# Task dep scope: namespace multiple.
+rivet task:merge:prepare
+! stdout 'root prepare'
+! stdout 'root build'
+! stdout 'one build'
+! stdout 'two build'
+stdout -count=1 'one prepare'
+stdout -count=1 'two prepare'
+stdout -count=1 'three prepare'
+stdout -count=1 'four prepare'
+
+# Task dep scope: explicitly qualified namespace task.
+rivet task:merge:three
+! stdout 'root prepare'
+! stdout 'root build'
+! stdout 'one build'
+! stdout 'two build'
+stdout 'three build'
+! stdout 'four build'
+stdout -count=1 'one prepare'
+stdout -count=1 'two prepare'
+stdout -count=1 'three prepare'
+stdout -count=1 'four prepare'
+
+# Task dep scope: explicitly qualified namespace task from root scope.
+rivet task:merge:four
+! stdout 'root prepare'
+! stdout 'root build'
+! stdout 'one build'
+! stdout 'two build'
+! stdout 'three build'
+stdout 'four build'
+stdout -count=1 'one prepare'
+stdout -count=1 'two prepare'
+stdout -count=1 'three prepare'
+stdout -count=1 'four prepare'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  prepare:
+    cmds:
+      - echo root prepare
+  build:
+    cmds:
+      - echo root build
+
+-- one/Taskfile.yml --
+version: 42
+namespace: task:merge
+tasks:
+  prepare:
+    cmds:
+      - echo one prepare
+  one:
+    deps:
+      - task: prepare
+    cmds:
+      - echo one build
+
+-- two/Taskfile.yml --
+version: 42
+namespace: task:merge
+tasks:
+  prepare:
+    cmds:
+      - echo two prepare
+  two:
+    deps:
+      - task: :prepare
+    cmds:
+      - echo two build
+
+-- three/Taskfile.yml --
+version: 42
+namespace: task:merge
+tasks:
+  prepare:
+    cmds:
+      - echo three prepare
+  three:
+    deps:
+      - task: task:merge:prepare
+    cmds:
+      - echo three build
+
+-- four/Taskfile.yml --
+version: 42
+namespace: task:merge
+tasks:
+  prepare:
+    cmds:
+      - echo four prepare
+  four:
+    deps:
+      - task: :task:merge:prepare
+    cmds:
+      - echo four build
