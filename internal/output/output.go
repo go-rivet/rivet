@@ -26,7 +26,7 @@ func BuildFor(o *ast.Output) (Output, error) {
 		if err := checkOutputGroupUnset(o); err != nil {
 			return nil, err
 		}
-		return Interleaved{}, nil
+		return NewInterleaved(), nil
 	case "passthrough":
 		if err := checkOutputGroupUnset(o); err != nil {
 			return nil, err

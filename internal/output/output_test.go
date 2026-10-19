@@ -19,7 +19,7 @@ func TestInterleaved(t *testing.T) {
 	t.Parallel()
 
 	var b bytes.Buffer
-	var o output.Output = output.Interleaved{}
+	var o output.Output = output.NewInterleaved()
 	w, _, cleanup := o.WrapWriter(&b, io.Discard, "", nil)
 
 	_, _ = fmt.Fprintln(w, "foo\nbar")

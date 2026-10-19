@@ -9,12 +9,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(testscript.RunMain(m, map[string]func() int{
-		"rivet": func() int {
-			main()
-			return 0
-		},
-	}))
+	testscript.Main(m, map[string]func(){
+		"rivet": main,
+	})
 }
 
 // TestScript runs the end-to-end scripts in each subdirectory of testdata/script

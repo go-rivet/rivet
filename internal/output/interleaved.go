@@ -8,15 +8,17 @@ import (
 	"github.com/go-rivet/rivet/internal/templater"
 )
 
-var interleavedMutex sync.Mutex
-
 type Interleaved struct {
 	mutex sync.Mutex
 }
 
-func (Interleaved) WrapWriter(stdOut, stdErr io.Writer, _ string, _ *templater.Cache) (io.Writer, io.Writer, CloseFunc) {
-	outW := &lineWriter{writer: stdOut}
-	errW := &lineWriter{writer: stdErr}
+func NewInterleaved() *Interleaved {
+	return &Interleaved{}
+}
+
+func (inter *Interleaved) WrapWriter(stdOut, stdErr io.Writer, _ string, _ *templater.Cache) (io.Writer, io.Writer, CloseFunc) {
+	outW := &lineWriter{inter: inter, writer: stdOut}
+	errW := &lineWriter{inter: inter, writer: stdErr}
 	return outW, errW, func(error) error {
 		if err := outW.flush(); err != nil {
 			_ = errW.flush()
@@ -27,6 +29,7 @@ func (Interleaved) WrapWriter(stdOut, stdErr io.Writer, _ string, _ *templater.C
 }
 
 type lineWriter struct {
+	inter  *Interleaved
 	writer io.Writer
 	buff   bytes.Buffer
 	mu     sync.Mutex
@@ -55,8 +58,8 @@ func (lw *lineWriter) flush() error {
 }
 
 func (lw *lineWriter) emit(b []byte) error {
-	interleavedMutex.Lock()
-	defer interleavedMutex.Unlock()
+	lw.inter.mutex.Lock()
+	defer lw.inter.mutex.Unlock()
 
 	_, err := lw.writer.Write(b)
 	return err
