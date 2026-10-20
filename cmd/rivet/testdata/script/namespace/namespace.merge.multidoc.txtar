@@ -1,0 +1,74 @@
+# A v42 Taskfile will merge into existing namespaces.
+rivet --list-all
+stdout '\* hello'
+stdout '\* task:merge:one'
+stdout '\* task:merge:two'
+stdout '\* task:merge:three'
+
+rivet hello
+stdout 'hello from root'
+stdout 'TASK=hello'
+stdout 'NAMESPACE='
+stdout 'TASKNAME=hello'
+
+rivet task:merge:one
+stdout 'TASK=task:merge:one'
+stdout 'NAMESPACE=task:merge'
+stdout 'TASKNAME=one'
+stdout 'TASKFILE=.*/Taskfile\.yml'
+
+rivet task:merge:two
+stdout 'TASK=task:merge:two'
+stdout 'NAMESPACE=task:merge'
+stdout 'TASKNAME=two'
+stdout 'TASKFILE=.*/Taskfile\.yml'
+
+rivet task:merge:three
+stdout 'TASK=task:merge:three'
+stdout 'NAMESPACE=task:merge'
+stdout 'TASKNAME=three'
+stdout 'TASKFILE=.*/Taskfile\.yml'
+
+-- Taskfile.yml --
+---
+version: 42
+tasks:
+  hello:
+    cmds:
+      - echo hello from root
+      - echo TASK={{.TASK}}
+      - echo NAMESPACE={{.NAMESPACE}}
+      - echo TASKNAME={{.TASKNAME}}
+
+---
+version: 42
+namespace: task:merge
+tasks:
+  one:
+    cmds:
+      - echo TASK={{.TASK}}
+      - echo NAMESPACE={{.NAMESPACE}}
+      - echo TASKNAME={{.TASKNAME}}
+      - echo TASKFILE={{.TASKFILE}}
+
+---
+version: 42
+namespace: task:merge
+tasks:
+  two:
+    cmds:
+      - echo TASK={{.TASK}}
+      - echo NAMESPACE={{.NAMESPACE}}
+      - echo TASKNAME={{.TASKNAME}}
+      - echo TASKFILE={{.TASKFILE}}
+
+---
+version: 42
+namespace: task:merge
+tasks:
+  three:
+    cmds:
+      - echo TASK={{.TASK}}
+      - echo NAMESPACE={{.NAMESPACE}}
+      - echo TASKNAME={{.TASKNAME}}
+      - echo TASKFILE={{.TASKFILE}}

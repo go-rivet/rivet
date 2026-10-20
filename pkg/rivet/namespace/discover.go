@@ -47,23 +47,33 @@ func (dag *DAG) Discover(ctx context.Context, reader *taskfile.Reader, rootDir, 
 		if err != nil {
 			return err
 		}
-		tf, err := reader.ReadRoot(ctx, node)
+		tfs, err := reader.ReadDocuments(ctx, node)
 		if err != nil {
 			return err
 		}
-		if !tf.Version.Equal(ast.V42) || tf.Namespace == "" {
-			continue
-		}
-		QualifyTaskNames(tf)
-		if err := dag.AddTaskfile(tf); err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		// Only the first task of a name is listed; the others are reachable
-		// through the DAG.
-		for name, task := range tf.Tasks.All(nil) {
-			if _, exists := root.Tasks.Get(name); !exists {
-				root.Tasks.Set(name, task)
+		for _, tf := range tfs {
+			if !tf.Version.Equal(ast.V42) || tf.Namespace == "" {
+				continue
 			}
+			if err := dag.AddDocument(tf, root); err != nil {
+				return fmt.Errorf("%s: %w", path, err)
+			}
+		}
+	}
+	return nil
+}
+
+// AddDocument qualifies the task names of taskfile, adds it to the DAG and
+// lists the first task of each name on root. The others are reachable through
+// the DAG.
+func (dag *DAG) AddDocument(taskfile, root *ast.Taskfile) error {
+	QualifyTaskNames(taskfile)
+	if err := dag.AddTaskfile(taskfile); err != nil {
+		return err
+	}
+	for name, task := range taskfile.Tasks.All(nil) {
+		if _, exists := root.Tasks.Get(name); !exists {
+			root.Tasks.Set(name, task)
 		}
 	}
 	return nil

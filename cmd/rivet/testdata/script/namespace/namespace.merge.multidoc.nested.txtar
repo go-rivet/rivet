@@ -1,0 +1,88 @@
+# A v42 Taskfile will merge into existing namespaces.
+cd root/first
+rivet --list-all
+stdout -count=1  '\* hello'
+stdout -count=1 '\* task:merge:one'
+stdout -count=1 '\* task:merge:two'
+stdout -count=1 '\* task:merge:three'
+stdout -count=1 '\* task:merge:first-two'
+stdout -count=1 '\* task:merge:second-three'
+
+rivet hello
+stdout 'USER_WORKING_DIR=.*/first'
+! stdout 'hello from false root'
+stdout 'hello from first root'
+! stdout 'hello from second root'
+! stdout 'hello from third root'
+stdout 'TASK=task:merge:one'
+! stdout 'TASK=task:merge:two'
+! stdout 'TASK=task:merge:three'
+stdout 'TASK=task:merge:first-two'
+stdout 'TASK=task:merge:second-three'
+
+
+-- Taskfile.yml --
+---
+version: 42
+namespace: task:merge
+tasks:
+  one:
+    cmds:
+      - cmd: echo TASK={{.TASK}}
+      - cmd: echo USER_WORKING_DIR={{.USER_WORKING_DIR}}
+---
+version: 42
+tasks:
+  hello:
+    cmds:
+      - cmd: echo hello from false root
+
+-- root/Taskfile.yml --
+---
+version: 42
+namespace: task:merge
+tasks:
+  one:
+    cmds:
+      - cmd: echo TASK={{.TASK}}
+      - cmd: echo USER_WORKING_DIR={{.USER_WORKING_DIR}}
+---
+version: 42
+tasks:
+  hello:
+    cmds:
+      - cmd: echo hello from first root
+      - task: task:merge:one
+      - task: task:merge:first-two
+      - task: task:merge:second-three
+
+-- root/first/Taskfile.yml --
+---
+version: 42
+namespace: task:merge
+tasks:
+  two:
+    cmds:
+      - cmd: echo TASK={{.TASK}}
+  first-two:
+    cmds:
+      - cmd: echo TASK={{.TASK}}
+
+-- root/first/second/Taskfile.yml --
+---
+version: 42
+tasks:
+  hello:
+    cmds:
+      - cmd: echo hello from third root
+      - task: task:merge:three
+---
+version: 42
+namespace: task:merge
+tasks:
+  three:
+    cmds:
+      - cmd: echo TASK={{.TASK}}
+  second-three:
+    cmds:
+      - cmd: echo TASK={{.TASK}}

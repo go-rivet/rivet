@@ -1,0 +1,46 @@
+# A v42 Taskfile will merge into existing namespaces.
+rivet --list-all
+stdout -count=1  '\* hello'
+stdout -count=1 '\* task:merge:one'
+stdout -count=1 '\* task:merge:two'
+
+rivet hello
+stdout 'hello from first root'
+! stdout 'hello from second root'
+stdout 'TASK=task:merge:one'
+! stdout 'TASK=task:merge:two'
+
+
+
+-- Taskfile.yml --
+
+---
+version: 42
+namespace: task:merge
+tasks:
+  one:
+    cmds:
+      - cmd: echo TASK={{.TASK}}
+
+---
+version: 42
+tasks:
+  hello:
+    cmds:
+      - cmd: echo hello from first root
+      - task: task:merge:one
+
+---
+version: 42
+tasks:
+  hello:
+    cmds:
+      - cmd: echo hello from second root
+      - task: task:merge:two
+---
+version: 42
+namespace: task:merge
+tasks:
+  two:
+    cmds:
+      - cmd: echo TASK={{.TASK}}

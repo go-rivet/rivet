@@ -14,6 +14,7 @@ import (
 	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/filepathext"
+	"github.com/go-rivet/rivet/internal/fsext"
 	"github.com/go-rivet/rivet/internal/output"
 	"github.com/go-rivet/rivet/internal/prompt"
 	"github.com/go-rivet/rivet/internal/stringutil"
@@ -72,6 +73,9 @@ func (e *Executor) getRootNode() (taskfile.Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	if e.Entrypoint == "" {
+		node = e.findV42RootNode(node)
+	}
 	e.RootDir = node.Dir()
 	if len(e.Dir) == 0 {
 		// Only set the executor dir if it was not already set.
@@ -79,6 +83,33 @@ func (e *Executor) getRootNode() (taskfile.Node, error) {
 	}
 	e.Entrypoint = node.Location()
 	return node, err
+}
+
+// findV42RootNode walks up from the working directory and returns the first
+// version 42 Taskfile with a document that has no namespace, skipping nearer
+// Taskfiles that only declare namespaces. If none is found, found is returned.
+func (e *Executor) findV42RootNode(found taskfile.Node) taskfile.Node {
+	if _, ok := found.(*taskfile.FileNode); !ok {
+		return found
+	}
+	paths, _ := fsext.SearchAll("", e.Dir, taskfile.DefaultTaskfiles)
+	ctx, cf := context.WithTimeout(e.ctx, e.Timeout)
+	defer cf()
+	reader := e.newTaskfileReader(ctx)
+	for _, path := range paths {
+		candidate, err := taskfile.NewFileNode(path, "")
+		if err != nil {
+			continue
+		}
+		documents, err := reader.ReadDocuments(ctx, candidate)
+		if err != nil {
+			continue
+		}
+		if root, _ := taskfile.SplitRoot(documents); root != nil && root.Version.Equal(ast.V42) {
+			return candidate
+		}
+	}
+	return found
 }
 
 func (e *Executor) readTaskfile(node taskfile.Node) error {
@@ -103,12 +134,17 @@ func (e *Executor) readRootTaskfile(node taskfile.Node) error {
 	defer cf()
 
 	reader := e.newTaskfileReader(ctx)
-	rootTaskfile, err := reader.ReadRoot(ctx, node)
+	documents, err := reader.ReadDocuments(ctx, node)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return &errors.TaskfileNetworkTimeoutError{URI: node.Location(), Timeout: e.Timeout}
 		}
 		return err
+	}
+	rootTaskfile, others := taskfile.SplitRoot(documents)
+	if rootTaskfile == nil {
+		// A file with only namespaced documents is still a valid root.
+		rootTaskfile, others = documents[0], documents[1:]
 	}
 	if !rootTaskfile.Version.Equal(ast.V42) {
 		return e.readTaskfile(node)
@@ -120,6 +156,11 @@ func (e *Executor) readRootTaskfile(node taskfile.Node) error {
 		return err
 	}
 	e.Taskfile = rootTaskfile
+	for _, document := range others {
+		if err := e.TaskfileDAG.AddDocument(document, rootTaskfile); err != nil {
+			return err
+		}
+	}
 	return e.TaskfileDAG.Discover(ctx, reader, e.RootDir, e.Entrypoint, e.Taskfile)
 }
 

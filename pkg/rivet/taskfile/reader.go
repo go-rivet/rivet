@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"slices"
@@ -271,6 +272,15 @@ func (r *Reader) ReadRoot(ctx context.Context, node Node) (*ast.Taskfile, error)
 	return r.readNode(ctx, node)
 }
 
+// ReadDocuments reads node without following its includes and returns one
+// Taskfile per YAML document. The first is the node's primary Taskfile.
+func (r *Reader) ReadDocuments(ctx context.Context, node Node) ([]*ast.Taskfile, error) {
+	defer func() {
+		_ = CleanGitCache()
+	}()
+	return r.readDocuments(ctx, node)
+}
+
 func (r *Reader) debugf(format string, a ...any) {
 	if r.debugFunc != nil {
 		r.debugFunc(fmt.Sprintf(format, a...))
@@ -417,6 +427,43 @@ func (r *Reader) include(ctx context.Context, node Node) error {
 }
 
 func (r *Reader) readNode(ctx context.Context, node Node) (*ast.Taskfile, error) {
+	tfs, err := r.readDocuments(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	if root, _ := SplitRoot(tfs); root != nil {
+		return root, nil
+	}
+	return tfs[0], nil
+}
+
+// SplitRoot separates the root Taskfile from the namespaced documents read
+// from one file. The root is the first document that declares no namespace;
+// any later documents without a namespace are discarded. The root is nil when
+// the file has no such document, in which case no documents are returned: a
+// namespaced document is only loaded when a root is identified.
+func SplitRoot(tfs []*ast.Taskfile) (*ast.Taskfile, []*ast.Taskfile) {
+	var root *ast.Taskfile
+	var namespaced []*ast.Taskfile
+	for _, tf := range tfs {
+		switch {
+		case tf.Namespace != "":
+			namespaced = append(namespaced, tf)
+		case root == nil:
+			root = tf
+		}
+	}
+	if root == nil {
+		return nil, nil
+	}
+	return root, namespaced
+}
+
+// readDocuments reads node and returns one Taskfile per YAML document. The
+// schema version is determined for each document. Only version 42 Taskfiles
+// may contain more than one document; a file of older schema is read as a
+// single document.
+func (r *Reader) readDocuments(ctx context.Context, node Node) ([]*ast.Taskfile, error) {
 	b, err := r.readNodeContent(ctx, node)
 	if err != nil {
 		return nil, err
@@ -424,59 +471,90 @@ func (r *Reader) readNode(ctx context.Context, node Node) (*ast.Taskfile, error)
 
 	// v42 is parsed from the raw YAML. Older schemas rely on command shortcut
 	// normalisation, which also covers documents that are not valid YAML as written.
-	var document yaml.Node
-	rawErr := yaml.Unmarshal(b, &document)
-	var schemaVersion *semver.Version
-	if rawErr == nil {
-		schemaVersion, err = taskfileSchemaVersion(&document)
+	documents, rawErr := decodeDocuments(b)
+	versions := make([]*semver.Version, len(documents))
+	anyV42 := false
+	for i, document := range documents {
+		versions[i], err = taskfileSchemaVersion(document)
 		if err != nil {
-			return nil, r.taskfileDecodeError(errors.NewTaskfileDecodeError(err, &document), node, b)
+			return nil, r.taskfileDecodeError(errors.NewTaskfileDecodeError(err, document), node, b)
+		}
+		if versions[i] != nil && versions[i].Equal(ast.V42) {
+			anyV42 = true
 		}
 	}
-	if rawErr != nil || schemaVersion == nil || !schemaVersion.Equal(ast.V42) {
-		document = yaml.Node{}
-		if err := yaml.Unmarshal(normalizeCommandShortcuts(b), &document); err != nil {
+	if anyV42 && rawErr != nil {
+		return nil, r.taskfileDecodeError(rawErr, node, b)
+	}
+
+	if !anyV42 {
+		// Legacy schemas: only the first document is meaningful.
+		normalized, err := decodeDocuments(normalizeCommandShortcuts(b))
+		if err != nil {
 			return nil, r.taskfileDecodeError(err, node, b)
 		}
-		schemaVersion, err = taskfileSchemaVersion(&document)
+		if len(normalized) == 0 {
+			return nil, &errors.TaskfileVersionCheckError{URI: node.Location()}
+		}
+		documents = normalized[:1]
+	}
+
+	taskfiles := make([]*ast.Taskfile, 0, len(documents))
+	for i, doc := range documents {
+		var tf *ast.Taskfile
+		if anyV42 {
+			if versions[i] == nil || !versions[i].Equal(ast.V42) {
+				return nil, r.taskfileDecodeError(errors.NewTaskfileDecodeError(
+					fmt.Errorf("task: every document in a multi-document Taskfile must be schema version 42"), doc), node, b)
+			}
+			tf, err = v42.Parse(doc)
+		} else {
+			tf = &ast.Taskfile{}
+			err = doc.Decode(tf)
+		}
 		if err != nil {
-			return nil, r.taskfileDecodeError(errors.NewTaskfileDecodeError(err, &document), node, b)
+			return nil, r.taskfileDecodeError(err, node, b)
 		}
-		if rawErr != nil && schemaVersion != nil && schemaVersion.Equal(ast.V42) {
-			return nil, r.taskfileDecodeError(rawErr, node, b)
+
+		// Check that the Taskfile is set and has a schema version
+		if tf.Version == nil {
+			return nil, &errors.TaskfileVersionCheckError{URI: node.Location()}
 		}
+
+		// Set the taskfile/task's locations
+		tf.Location = node.Location()
+		for task := range tf.Tasks.Values(nil) {
+			// If the task is not defined, create a new one
+			if task == nil {
+				task = &ast.Task{}
+			}
+			// Set the location of the taskfile for each task
+			if task.Location.Taskfile == "" {
+				task.Location.Taskfile = tf.Location
+			}
+		}
+		taskfiles = append(taskfiles, tf)
 	}
 
-	var tf *ast.Taskfile
-	if schemaVersion != nil && schemaVersion.Equal(ast.V42) {
-		tf, err = v42.Parse(&document)
-	} else {
-		tf = &ast.Taskfile{}
-		err = document.Decode(tf)
-	}
-	if err != nil {
-		return nil, r.taskfileDecodeError(err, node, b)
-	}
+	return taskfiles, nil
+}
 
-	// Check that the Taskfile is set and has a schema version
-	if tf.Version == nil {
-		return nil, &errors.TaskfileVersionCheckError{URI: node.Location()}
-	}
-
-	// Set the taskfile/task's locations
-	tf.Location = node.Location()
-	for task := range tf.Tasks.Values(nil) {
-		// If the task is not defined, create a new one
-		if task == nil {
-			task = &ast.Task{}
+// decodeDocuments decodes every YAML document in b. Documents decoded before an
+// error are still returned.
+func decodeDocuments(b []byte) ([]*yaml.Node, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(b))
+	var documents []*yaml.Node
+	for {
+		var document yaml.Node
+		err := decoder.Decode(&document)
+		if err == io.EOF {
+			return documents, nil
 		}
-		// Set the location of the taskfile for each task
-		if task.Location.Taskfile == "" {
-			task.Location.Taskfile = tf.Location
+		if err != nil {
+			return documents, err
 		}
+		documents = append(documents, &document)
 	}
-
-	return tf, nil
 }
 
 func (r *Reader) taskfileDecodeError(err error, node Node, content []byte) error {
