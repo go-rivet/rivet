@@ -2,6 +2,7 @@ package namespace
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dominikbraun/graph"
@@ -121,6 +122,32 @@ func (dag *DAG) Entries(name string) []*TaskEntry {
 		return nil
 	}
 	return dag.tasks[name]
+}
+
+// Tails returns the tasks called name that are defined in a non-root namespace,
+// ordered by qualified name. Tasks in the root namespace are excluded.
+func (dag *DAG) Tails(name string) []*TaskEntry {
+	if dag == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(dag.tasks))
+	for key := range dag.tasks {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var result []*TaskEntry
+	for _, key := range keys {
+		for _, entry := range dag.tasks[key] {
+			if entry.Task == nil || entry.Task.Namespace == "" {
+				continue
+			}
+			local := strings.TrimPrefix(entry.Task.Task, entry.Task.Namespace+ast.NamespaceSeparator)
+			if local == name {
+				result = append(result, entry)
+			}
+		}
+	}
+	return result
 }
 
 // Resolve returns the tasks to run for a call to name. When the call comes

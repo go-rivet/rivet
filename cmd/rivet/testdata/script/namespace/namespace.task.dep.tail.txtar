@@ -1,0 +1,31 @@
+# Task call tail from task.
+rivet
+! stdout 'root build'
+stdout -count=1 'one build'
+stdout -count=1 'two build'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  default:
+    deps:
+      - task: ::build
+  build:
+    cmds:
+      - cmd: echo root build
+
+-- one/Taskfile.yml --
+version: 42
+namespace: task:one
+tasks:
+  build:
+    cmds:
+      - cmd: echo one build
+
+-- two/Taskfile.yml --
+version: 42
+namespace: task:one:two
+tasks:
+  build:
+    cmds:
+      - cmd: echo two build

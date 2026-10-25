@@ -11,6 +11,13 @@ rivet --list-all
 stdout -count=1 '\* task:merge:build'
 stdout -count=1 '\* task:merge:prepare'
 
+rivet task:merge:prepare
+! stdout 'one build'
+stdout -count=1 'one prepare'
+stdout -count=1 'two prepare'
+stdout -count=1 'three prepare'
+
+
 -- Taskfile.yml --
 version: 42
 tasks: {}

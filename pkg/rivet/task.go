@@ -129,6 +129,21 @@ func (e *Executor) splitRegularAndWatchCalls(calls ...*Call) (regularCalls []*Ca
 
 // RunTask runs a task by its name
 func (e *Executor) RunTask(ctx context.Context, call *Call) error {
+	if tailName, ok := tailTaskName(call.Task); ok {
+		entries := e.TaskfileDAG.Tails(tailName)
+		if len(entries) == 0 {
+			return &errors.TaskNotFoundError{TaskName: call.Task}
+		}
+		for _, entry := range entries {
+			pinned := *call
+			pinned.Task = entry.Task.Task
+			pinned.Taskfile = entry.Taskfile.Location
+			if err := e.RunTask(ctx, &pinned); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	normalizeTaskCallScope(call)
 
 	// Attach trace/span identifiers so logs produced by this task carry them.
@@ -579,8 +594,14 @@ func (e *Executor) FindMatchingTasks(call *Call) ([]*MatchingTask, error) {
 	if call == nil {
 		return nil, nil
 	}
-	normalizeTaskCallScope(call)
 	var matchingTasks []*MatchingTask
+	if tailName, ok := tailTaskName(call.Task); ok {
+		for _, entry := range e.TaskfileDAG.Tails(tailName) {
+			matchingTasks = append(matchingTasks, &MatchingTask{Task: entry.Task})
+		}
+		return matchingTasks, nil
+	}
+	normalizeTaskCallScope(call)
 	if entries := e.TaskfileDAG.Resolve(call.Task, call.Taskfile); len(entries) > 0 {
 		for _, entry := range entries {
 			if e.TaskfileDAG == nil || validTaskName(entry.Task) {
@@ -640,8 +661,17 @@ func validTaskName(task *ast.Task) bool {
 	return !strings.Contains(name, ast.NamespaceSeparator)
 }
 
+// tailTaskName reports whether name uses the "::name" syntax, which selects
+// the task at the tail of every DAG branch, and returns the bare task name.
+func tailTaskName(name string) (string, bool) {
+	return strings.CutPrefix(name, ast.NamespaceSeparator+ast.NamespaceSeparator)
+}
+
 func normalizeTaskCallScope(call *Call) {
 	if call == nil {
+		return
+	}
+	if _, ok := tailTaskName(call.Task); ok {
 		return
 	}
 	if rootName, ok := strings.CutPrefix(call.Task, ast.NamespaceSeparator); ok {
