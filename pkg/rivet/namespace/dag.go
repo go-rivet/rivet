@@ -29,6 +29,7 @@ type TaskEntry struct {
 type Vertex struct {
 	Path      string
 	Taskfiles []*ast.Taskfile
+	Vars      Vars
 }
 
 func dagHash(vertex *Vertex) string {
@@ -90,6 +91,10 @@ func (dag *DAG) AddTaskfile(taskfile *ast.Taskfile) error {
 		parent = vertex
 	}
 	parent.Taskfiles = append(parent.Taskfiles, taskfile)
+	if parent.Vars == nil {
+		parent.Vars = Vars{}
+	}
+	parent.Vars.Merge(taskfile.Vars)
 	if taskfile.Tasks != nil {
 		for name, task := range taskfile.Tasks.All(nil) {
 			dag.tasks[name] = append(dag.tasks[name], &TaskEntry{Task: task, Taskfile: taskfile})

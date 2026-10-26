@@ -1,0 +1,19 @@
+# Test: namespaced vars 
+rivet
+cmp stdout expect
+
+-- Taskfile.yml --
+---
+version: 42
+tasks:
+  default:
+    cmds:
+      - cmd: echo "{{.tasks:message}}"
+---
+version: 42
+namespace: tasks
+vars:
+  message: Hello World!
+
+-- expect --
+Hello World!

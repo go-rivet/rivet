@@ -1,0 +1,27 @@
+# Test: namespaced global vars 
+rivet
+cmp stdout expect
+
+-- Taskfile.yml --
+---
+version: 42
+vars:
+  message: Hello World!
+tasks:
+  default:
+    cmds:
+      - task: tasks:world
+---
+version: 42
+namespace: tasks
+vars:
+  message: "Hello from namespace"
+tasks:
+  world:
+    cmds:
+      - cmd: echo "{{.:message}}"
+      - cmd: echo "{{.message}}"
+
+-- expect --
+Hello World!
+Hello from namespace

@@ -82,12 +82,12 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 		return nil, err
 	}
 
-	vars, err := e.Compiler.FastGetVariables(e.ctx, origTask, call)
+	vars, err := e.taskVars(origTask, call, false)
 	if err != nil {
 		return nil, err
 	}
 
-	cache := &templater.Cache{Vars: vars}
+	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(origTask, call)}
 
 	return &ast.Task{
 		Task:                 origTask.Task,
@@ -130,9 +130,9 @@ func (e *Executor) compiledTaskWithTimestampCache(call *Call, evaluateShVars boo
 
 	var vars *ast.Vars
 	if evaluateShVars {
-		vars, err = e.Compiler.GetVariables(e.ctx, origTask, call)
+		vars, err = e.taskVars(origTask, call, true)
 	} else {
-		vars, err = e.Compiler.FastGetVariables(e.ctx, origTask, call)
+		vars, err = e.taskVars(origTask, call, false)
 	}
 	if err != nil {
 		return nil, err
@@ -144,7 +144,7 @@ func (e *Executor) compiledTaskWithTimestampCache(call *Call, evaluateShVars boo
 		}
 	}
 
-	cache := &templater.Cache{Vars: vars}
+	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(origTask, call)}
 
 	// Resolve enum refs only when dynamic variables have been evaluated,
 	// since enum refs may depend on shell-derived variables (e.g. fromJson)

@@ -1,0 +1,31 @@
+# Test: missing namespaced reference
+! rivet
+stderr 'variable ".tasks:message" is not defined'
+
+# Test: missing namespace local reference
+! rivet tasks:hello
+stderr 'variable ".hello" is not defined'
+
+# Test: missing global reference
+! rivet tasks:world
+stderr 'variable ".:world" is not defined'
+
+
+-- Taskfile.yml --
+---
+version: 42
+tasks:
+  default:
+    cmds:
+      - cmd: echo "{{.tasks:message}}"
+---
+version: 42
+namespace: tasks
+tasks:
+  hello:
+    cmds:
+      - cmd: echo "{{.hello}}"
+  world:
+    cmds:
+      - cmd: echo "{{.:world}}"
+ 

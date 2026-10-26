@@ -1,0 +1,36 @@
+# Test: namespaced global vars 
+env FOO=foo
+rivet
+cmp stdout expect
+
+-- Taskfile.yml --
+---
+version: 42
+vars:
+  message: Hello World!
+tasks:
+  default:
+    cmds:
+      - task: tasks:special
+      - task: tasks:envar
+---
+version: 42
+namespace: tasks
+vars:
+  TASKFILE: taskfile
+  FOO: bar 
+tasks:
+  special:
+    cmds:
+      - cmd: echo "namespace {{.TASKFILE}}"
+      - cmd: echo "root {{.:TASKFILE | base}}"
+  envar:
+    cmds:
+      - cmd: echo "namespace {{.FOO}}"
+      - cmd: echo "root {{.:FOO}}"
+
+-- expect --
+namespace taskfile
+root Taskfile.yml
+namespace bar
+root foo

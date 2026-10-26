@@ -67,6 +67,8 @@ func init() {
 // return the zero value.
 type Cache struct {
 	Vars *ast.Vars
+	// Namespaced, when set, resolves namespaced var references on demand.
+	Namespaced NamespacedResolver
 
 	cacheMap map[string]any
 	err      error
@@ -247,6 +249,10 @@ func ReplaceWithExtra[T any](v T, cache *Cache, extra map[string]any) T {
 			initialized = true
 		}
 
+		str, execData, err := withNamespaced(str, data, cache.Namespaced)
+		if err != nil {
+			return str, err
+		}
 		tpl, err := parseTemplate(str)
 		if err != nil {
 			return str, err
@@ -256,7 +262,7 @@ func ReplaceWithExtra[T any](v T, cache *Cache, extra map[string]any) T {
 		buf.Reset()
 		defer bufPool.Put(buf)
 
-		if err := tpl.Execute(buf, data); err != nil {
+		if err := tpl.Execute(buf, execData); err != nil {
 			return str, err
 		}
 		return strings.ReplaceAll(buf.String(), "<no value>", ""), nil

@@ -438,7 +438,7 @@ func (e *Executor) runDeferred(taskCtx context.Context, t *ast.Task, call *Call,
 	}
 
 	cmd := t.Cmds[i]
-	cache := &templater.Cache{Vars: vars}
+	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call)}
 	extra := map[string]any{}
 
 	if deferredExitCode != nil && *deferredExitCode > 0 {
@@ -498,8 +498,8 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		if t.Interactive {
 			outputWrapper = output.Passthrough{}
 		}
-		vars, err := e.Compiler.FastGetVariables(e.ctx, t, call)
-		outputTemplater := &templater.Cache{Vars: vars}
+		vars, err := e.taskVars(t, call, false)
+		outputTemplater := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call)}
 		if err != nil {
 			return fmt.Errorf("task: failed to get variables: %w", err)
 		}

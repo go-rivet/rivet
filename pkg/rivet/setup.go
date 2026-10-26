@@ -289,6 +289,11 @@ func (e *Executor) setupCompiler() error {
 		RootDir:        e.RootDir,
 		TaskfileVars:   e.Taskfile.Vars,
 	}
+	if e.TaskfileDAG != nil {
+		// Version 42 Taskfile vars live on the DAG nodes and are resolved on
+		// demand by the templater, not through the ordered legacy vars.
+		e.Compiler.TaskfileVars = nil
+	}
 	return nil
 }
 

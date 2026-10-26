@@ -66,6 +66,8 @@ type (
 		// Internal
 		Taskfile           *ast.Taskfile
 		TaskfileDAG        *namespace.DAG
+		envOnce            sync.Once
+		env                map[string]any
 		Compiler           *Compiler
 		Output             output.Output
 		OutputStyle        ast.Output
