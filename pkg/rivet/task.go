@@ -217,11 +217,13 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			rlog.Warnf(ctx, "task: cannot make directory %q: %v\n", t.Dir, err)
 		}
 	}
-	call.TaskDotenv.Files = t.Dotenv
-	if changed, err := call.TaskDotenv.Load(t.Dir, nil, nil); err != nil {
-		return err
-	} else if changed {
-		timestampCache.clear()
+	if e.TaskfileDAG == nil {
+		call.TaskDotenv.Files = t.Dotenv
+		if changed, err := call.TaskDotenv.Load(t.Dir, nil, nil); err != nil {
+			return err
+		} else if changed {
+			timestampCache.clear()
+		}
 	}
 	t, err = e.compiledTaskWithTimestampCache(call, true, timestampCache)
 	if err != nil {
@@ -438,7 +440,7 @@ func (e *Executor) runDeferred(taskCtx context.Context, t *ast.Task, call *Call,
 	}
 
 	cmd := t.Cmds[i]
-	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call)}
+	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars)}
 	extra := map[string]any{}
 
 	if deferredExitCode != nil && *deferredExitCode > 0 {
@@ -499,7 +501,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 			outputWrapper = output.Passthrough{}
 		}
 		vars, err := e.taskVars(t, call, false)
-		outputTemplater := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call)}
+		outputTemplater := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars)}
 		if err != nil {
 			return fmt.Errorf("task: failed to get variables: %w", err)
 		}

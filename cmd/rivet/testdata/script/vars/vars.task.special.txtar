@@ -1,0 +1,86 @@
+
+# Test: task special vars 
+rivet s
+cmpenv stdout expect.root
+
+# Test: task special vars with namespace 
+mkdir foo 
+cd foo 
+rivet ns:ns_s
+cmpenv stdout ../expect.ns
+
+# Test: task special vars overridden by namespace vars
+rivet over:override
+cmp stdout ../expect.override
+
+-- Taskfile.yml --
+---
+version: 42
+tasks:
+  special:
+    aliases: [s]
+    cmds:
+      - cmd: echo "alias = {{.ALIAS}}"
+      - cmd: echo "namespace = {{.NAMESPACE}}"
+      - cmd: echo "task = {{.TASK}}"
+      - cmd: echo "taskname = {{.TASKNAME}}"
+      - cmd: echo "task_dir = {{.TASK_DIR}}"
+      
+-- foo/Taskfile.yml --
+---
+version: 42
+namespace: ns
+tasks:
+  special:
+    aliases: [ns_s]
+    cmds:
+      - cmd: echo "alias = {{.ALIAS}}"
+      - cmd: echo "namespace = {{.NAMESPACE}}"
+      - cmd: echo "task = {{.TASK}}"
+      - cmd: echo "taskname = {{.TASKNAME}}"
+      - cmd: echo "task_dir = {{.TASK_DIR}}"
+
+-- bar/Taskfile.yml --
+---
+version: 42
+namespace: over
+vars:
+  ALIAS: some_other_alias
+  NAMESPACE: some_other_namespace
+  TASK: some_other_task
+  TASKNAME: some_other_taskname
+  TASK_DIR: some_other_taskdir
+tasks:
+  override:
+    aliases: [over_o]
+    vars:
+      ALIAS: some_alias
+      NAMESPACE: some_namespace
+      TASK: some_task
+      TASKNAME: some_taskname
+      TASK_DIR: some_taskdir
+    cmds:
+      - cmd: echo "alias = {{.ALIAS}}"
+      - cmd: echo "namespace = {{.NAMESPACE}}"
+      - cmd: echo "task = {{.TASK}}"
+      - cmd: echo "taskname = {{.TASKNAME}}"
+      - cmd: echo "task_dir = {{.TASK_DIR}}"
+     
+-- expect.root --
+alias = s
+namespace = 
+task = special
+taskname = special
+task_dir = $WORK
+-- expect.ns --
+alias = ns:ns_s
+namespace = ns
+task = ns:special
+taskname = special
+task_dir = $WORK/foo
+-- expect.override --
+alias = some_alias
+namespace = some_namespace
+task = some_task
+taskname = some_taskname
+task_dir = some_taskdir

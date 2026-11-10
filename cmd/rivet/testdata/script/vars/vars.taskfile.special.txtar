@@ -1,0 +1,111 @@
+
+# Test: taskfile special vars 
+rivet special
+cmpenv stdout expect.root
+
+# Test: taskfile special vars with namespace 
+mkdir foo 
+cd foo 
+rivet ns:special 
+cmpenv stdout ../expect.ns
+
+# Test: taskfile special vars overridden by namespace vars
+rivet over:override
+cmp stdout ../expect.override
+
+-- Taskfile.yml --
+---
+version: 42
+tasks:
+  special:
+    cmds:
+      - cmd: echo "namespace = {{.NAMESPACE}}"
+      - cmd: echo "rivet_exe = {{.RIVET_EXE}}"
+      - cmd: echo "rivet_version = {{.RIVET_VERSION}}"
+      - cmd: echo "root_dir = {{.ROOT_DIR}}"
+      - cmd: echo "root_taskfile = {{.ROOT_TASKFILE}}"
+      - cmd: echo "taskfile = {{.TASKFILE}}"
+      - cmd: echo "taskfile_dir = {{.TASKFILE_DIR}}"
+      - cmd: echo "task_exe = {{.TASK_EXE}}"
+      - cmd: echo "task_version = {{.TASK_VERSION}}"
+      - cmd: echo "user_working_dir = {{.USER_WORKING_DIR}}"
+
+-- foo/Taskfile.yml --
+---
+version: 42
+namespace: ns
+tasks:
+  special:
+    cmds:
+      - cmd: echo "namespace = {{.NAMESPACE}}"
+      - cmd: echo "rivet_exe = {{.RIVET_EXE}}"
+      - cmd: echo "rivet_version = {{.RIVET_VERSION}}"
+      - cmd: echo "root_dir = {{.ROOT_DIR}}"
+      - cmd: echo "root_taskfile = {{.ROOT_TASKFILE}}"
+      - cmd: echo "taskfile = {{.TASKFILE}}"
+      - cmd: echo "taskfile_dir = {{.TASKFILE_DIR}}"
+      - cmd: echo "task_exe = {{.TASK_EXE}}"
+      - cmd: echo "task_version = {{.TASK_VERSION}}"
+      - cmd: echo "user_working_dir = {{.USER_WORKING_DIR}}"
+-- bar/Taskfile.yml --
+---
+version: 42
+namespace: over
+vars:
+  NAMESPACE: some_namespace
+  RIVET_EXE: some_rivet
+  RIVET_VERSION: v24
+  ROOT_DIR: /some/root
+  ROOT_TASKFILE: /some/root/taskfile.yml
+  TASKFILE: /some/root/taskfile.yaml
+  TASKFILE_DIR: /some/root
+  TASK_EXE: this_rivet
+  TASK_VERSION: v25
+  USER_WORKING_DIR: /some/working
+tasks:
+  override:
+    cmds:
+      - cmd: echo "namespace = {{.NAMESPACE}}"
+      - cmd: echo "rivet_exe = {{.RIVET_EXE}}"
+      - cmd: echo "rivet_version = {{.RIVET_VERSION}}"
+      - cmd: echo "root_dir = {{.ROOT_DIR}}"
+      - cmd: echo "root_taskfile = {{.ROOT_TASKFILE}}"
+      - cmd: echo "taskfile = {{.TASKFILE}}"
+      - cmd: echo "taskfile_dir = {{.TASKFILE_DIR}}"
+      - cmd: echo "task_exe = {{.TASK_EXE}}"
+      - cmd: echo "task_version = {{.TASK_VERSION}}"
+      - cmd: echo "user_working_dir = {{.USER_WORKING_DIR}}"
+     
+-- expect.root --
+namespace = 
+rivet_exe = rivet
+rivet_version = dev
+root_dir = $WORK
+root_taskfile = $WORK/Taskfile.yml
+taskfile = $WORK/Taskfile.yml
+taskfile_dir = $WORK
+task_exe = rivet
+task_version = dev
+user_working_dir = $WORK
+-- expect.ns --
+namespace = ns
+rivet_exe = rivet
+rivet_version = dev
+root_dir = $WORK
+root_taskfile = $WORK/Taskfile.yml
+taskfile = $WORK/foo/Taskfile.yml
+taskfile_dir = $WORK/foo
+task_exe = rivet
+task_version = dev
+user_working_dir = $WORK/foo
+-- expect.override --
+namespace = some_namespace
+rivet_exe = some_rivet
+rivet_version = v24
+root_dir = /some/root
+root_taskfile = /some/root/taskfile.yml
+taskfile = /some/root/taskfile.yaml
+taskfile_dir = /some/root
+task_exe = this_rivet
+task_version = v25
+user_working_dir = /some/working

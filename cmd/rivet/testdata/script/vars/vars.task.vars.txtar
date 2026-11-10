@@ -1,0 +1,48 @@
+
+# Test: task vars
+rivet tvar
+cmp stdout expect.tvar
+
+# Test: task ns vars
+rivet ns:tvar
+cmp stdout expect.ns_tvar
+
+-- Taskfile.yml --
+---
+version: 42
+vars:
+  FOO: g_foo
+  BAR: g_bar
+tasks:
+  tvar:
+    vars:
+      FOO: t_foo
+    cmds:
+      - cmd: echo "foo = {{.FOO}}"
+      - cmd: echo "bar = {{.BAR}}"
+      
+-- ns/Taskfile.yml --
+---
+version: 42
+namespace: ns
+vars:
+  FOO: ns_foo
+  BAR: ns_bar
+tasks:
+  tvar:
+    vars:
+      FOO: ns_t_foo
+    cmds:
+      - cmd: echo "foo = {{.FOO}}"
+      - cmd: echo "bar = {{.BAR}}"
+      - cmd: echo "g_foo = {{.:FOO}}"
+      - cmd: echo "g_bar = {{.:BAR}}"
+
+-- expect.tvar --
+foo = t_foo
+bar = g_bar
+-- expect.ns_tvar --
+foo = ns_t_foo
+bar = ns_bar
+g_foo = g_foo
+g_bar = g_bar

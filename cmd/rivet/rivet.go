@@ -164,6 +164,9 @@ func run(ctx context.Context) error {
 		calls = append(calls, &task.Call{Task: "default"})
 	}
 	e.Taskfile.Vars.Merge(globals, nil) // Merge CLI variables first (e.g. FOO=bar) so they take priority over Taskfile defaults
+	if e.TaskfileDAG != nil {
+		e.TaskfileDAG.Vars("").Merge(globals)
+	}
 	e.Taskfile.Vars.ReverseMerge(specialVars(cliArgsPreDash, cliArgsPostDash), nil)
 	if !flagConfig.Watch {
 		e.InterceptInterruptSignals()

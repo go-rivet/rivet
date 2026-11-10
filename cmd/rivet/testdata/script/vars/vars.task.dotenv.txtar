@@ -1,0 +1,56 @@
+
+# Test: task dotenv 
+env FOO=foo BAR=bar
+rivet env
+cmp stdout expect.env
+
+# Test: task dotenv override
+rivet ns:override
+cmp stdout expect.override
+
+-- .env --
+BAR=dot-bar
+FOO=dot-foo
+TASK=dotenv-task
+
+-- Taskfile.yml --
+---
+version: 42
+tasks:
+  env:
+    dotenv:
+     - .env
+    cmds:
+      - cmd: echo "foo = {{.FOO}}"
+      - cmd: echo "bar = {{.BAR}}"
+      - cmd: echo "task = {{.TASK}}"
+
+-- ns/Taskfile.yml --
+---
+version: 42
+namespace: ns
+tasks:
+  override:
+    dotenv:
+     - .env
+    vars:
+      FOO: g_foo
+      g_foo: "{{.FOO}}"
+      g_bar: "{{.BAR}}"
+    cmds:
+      - cmd: echo "foo = {{.FOO}}"
+      - cmd: echo "bar = {{.BAR}}"
+      - cmd: echo "task = {{.TASK}}"
+      - cmd: echo "g_foo = {{.g_foo}}"
+      - cmd: echo "g_bar = {{.g_bar}}"
+     
+-- expect.env --
+foo = dot-foo
+bar = dot-bar
+task = env
+-- expect.override --
+foo = g_foo
+bar = dot-bar
+task = ns:override
+g_foo = g_foo
+g_bar = dot-bar

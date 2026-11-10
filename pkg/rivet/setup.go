@@ -46,10 +46,16 @@ func (e *Executor) Setup(ctx context.Context) error {
 	if err := e.setupCompiler(); err != nil {
 		return err
 	}
-	_tv, _ := e.Compiler.GetTaskfileVariables(e.ctx)
-	e.Compiler.TaskfileDotenv.Files = e.Taskfile.Dotenv
-	if _, err := e.Compiler.TaskfileDotenv.Load(e.Dir, _tv, nil); err != nil {
-		return err
+	if e.TaskfileDAG != nil {
+		if _, err := e.v42Env(); err != nil {
+			return err
+		}
+	} else {
+		_tv, _ := e.Compiler.GetTaskfileVariables(e.ctx)
+		e.Compiler.TaskfileDotenv.Files = e.Taskfile.Dotenv
+		if _, err := e.Compiler.TaskfileDotenv.Load(e.Dir, _tv, nil); err != nil {
+			return err
+		}
 	}
 	if err := e.doVersionChecks(); err != nil {
 		return err

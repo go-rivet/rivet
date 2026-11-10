@@ -1,0 +1,44 @@
+
+# Test: taskfile cli vars 
+rivet cli FOO=c_foo
+cmp stdout expect.cli
+
+# Test: taskfile cli override
+rivet ns:override FOO=c_foo
+cmp stdout expect.override
+
+-- Taskfile.yml --
+---
+version: 42
+vars:
+  FOO: g_foo
+  BAR: g_bar
+tasks:
+  cli:
+    cmds:
+      - cmd: echo "foo = {{.FOO}}"
+      - cmd: echo "bar = {{.BAR}}"
+      
+-- ns/Taskfile.yml --
+---
+version: 42
+namespace: ns
+vars:
+  FOO: ns_foo
+  BAR: ns_bar
+tasks:
+  override:
+    cmds:
+      - cmd: echo "foo = {{.FOO}}"
+      - cmd: echo "bar = {{.BAR}}"
+      - cmd: echo "g_foo = {{.:FOO}}"
+      - cmd: echo "g_bar = {{.:BAR}}"
+     
+-- expect.cli --
+foo = c_foo
+bar = g_bar
+-- expect.override --
+foo = ns_foo
+bar = ns_bar
+g_foo = c_foo
+g_bar = g_bar

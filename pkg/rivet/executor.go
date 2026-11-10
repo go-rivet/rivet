@@ -68,6 +68,7 @@ type (
 		TaskfileDAG        *namespace.DAG
 		envOnce            sync.Once
 		env                map[string]any
+		envErr             error
 		Compiler           *Compiler
 		Output             output.Output
 		OutputStyle        ast.Output
