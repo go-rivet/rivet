@@ -111,6 +111,12 @@ vars:
 	}
 }
 
+func TestLegacyCmdRejectsLua(t *testing.T) {
+	var cmd ast.Cmd
+	err := yaml.Unmarshal([]byte("lua: print('hello')\n"), &cmd)
+	require.Error(t, err)
+}
+
 func TestVarLiveAndDir(t *testing.T) {
 	t.Parallel()
 

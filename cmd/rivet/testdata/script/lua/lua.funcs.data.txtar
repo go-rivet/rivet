@@ -1,0 +1,23 @@
+rivet run
+cmp stdout expect.stdout
+cmp stderr expect.stderr
+
+-- expect.stdout --
+yaml = example
+yaml list = b
+merge = newer
+base unchanged = older
+-- expect.stderr --
+-- Taskfile.yml --
+version: 42
+tasks:
+  run:
+    cmds:
+      - lua: |
+          local fn = rivet.fn
+          local data = fn.fromYaml(fn.toYaml({name = "example", items = {"a", "b"}}))
+          print("yaml = " .. data.name)
+          print("yaml list = " .. data.items[2])
+          local base = {value = "older"}
+          print("merge = " .. fn.merge(base, {value = "newer"}).value)
+          print("base unchanged = " .. base.value)

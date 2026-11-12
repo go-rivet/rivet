@@ -1,0 +1,27 @@
+rivet run
+cmp stdout expect.stdout
+cmp stderr expect.stderr
+
+-- expect.stdout --
+slash roundtrip = source/main.c
+joined = source/main.c
+relative = main.c
+absolute is absolute = true
+substituted = source/main.o
+unchanged = source/header.h
+-- expect.stderr --
+-- Taskfile.yml --
+version: 42
+tasks:
+  run:
+    cmds:
+      - lua: |
+          local fn = rivet.fn
+          print("slash roundtrip = " .. fn.toSlash(fn.fromSlash("source/main.c")))
+          print("joined = " .. fn.toSlash(fn.joinPath("source", "main.c")))
+          print("relative = " .. fn.relPath("source", fn.joinPath("source", "main.c")))
+          local absolute = fn.absPath(".")
+          print("absolute is absolute = " .. tostring(fn.absPath(absolute) == absolute))
+          local paths = fn.patsubst(".c", ".o", {"source/main.c", "source/header.h"})
+          print("substituted = " .. paths[1])
+          print("unchanged = " .. paths[2])

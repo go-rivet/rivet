@@ -1,0 +1,22 @@
+rivet run
+cmp stdout expect.stdout
+cmp stderr expect.stderr
+
+-- expect.stdout --
+quoted = 'two words'
+args = two words
+environment separator valid = true
+url = https://example.com/a/b
+-- expect.stderr --
+-- Taskfile.yml --
+version: 42
+tasks:
+  run:
+    cmds:
+      - lua: |
+          local fn = rivet.fn
+          print("quoted = " .. fn.shellQuote("two words"))
+          print("args = " .. fn.splitArgs([[one "two words"]])[2])
+          local separator = fn.OS() == "windows" and ";" or ":"
+          print("environment separator valid = " .. tostring(fn.joinEnv("one", "two") == "one" .. separator .. "two"))
+          print("url = " .. fn.joinUrl("https://example.com/a", "b"))

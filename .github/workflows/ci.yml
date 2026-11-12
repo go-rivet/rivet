@@ -22,12 +22,6 @@ jobs:
       - name: Checkout Code Repository
         uses: actions/checkout@v7
 
-      - name: Configure Go Environment
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-
       - name: Execute Makefile Build Target
         run: |
           make build
@@ -69,6 +63,11 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
+      - name: Configure Zig Toolchain
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@latest
         
@@ -84,7 +83,7 @@ jobs:
     name: Release
     needs: [lint, test]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: macos-15-intel
     permissions:
       contents: write
     steps:
@@ -93,16 +92,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure Go Environment
-        uses: actions/setup-go@v7
+      - name: Configure Docker
+        uses: douglascamata/setup-docker-macos-action@v1.0.1
         with:
-          go-version-file: 'go.mod'
-          cache: true
+          lima: v1.2.1
+          colima: v0.9.1
 
-      - name: Install System Dependencies
+      - name: Make macOS SDK available to Docker
         run: |
-          sudo apt-get update
-          sudo apt-get install -y zip
+          SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+          ditto "$SDK_PATH" "$HOME/MacOSX.sdk"
+          echo "MACOS_SDK_PATH=$HOME/MacOSX.sdk" >> "$GITHUB_ENV"
 
       - name: Run Makefile Release Target
         run: |

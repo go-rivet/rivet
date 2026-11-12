@@ -1,0 +1,33 @@
+rivet run
+cmp stdout expect.stdout
+cmp stderr expect.stderr
+
+-- expect.stdout --
+value = original
+lua mutation = changed
+value after lua = original
+-- expect.stderr --
+-- Taskfile.yml --
+version: 42
+vars:
+  VALUE: original
+  ITEMS: [first, second]
+  SETTINGS:
+    map:
+      enabled: true
+tasks:
+  run:
+    vars:
+      LOCAL: task
+    cmds:
+      - lua: |
+          assert(ITEMS == nil and VALUE == nil and LOCAL == nil)
+          assert(ctx.vars.ITEMS[1] == "first")
+          assert(ctx.vars.ITEMS[2] == "second")
+          assert(ctx.vars.SETTINGS.enabled == true)
+          assert(ctx.vars.LOCAL == "task")
+          print("value = " .. ctx.vars.VALUE)
+          ctx.vars.VALUE = "changed"
+          print("lua mutation = " .. ctx.vars.VALUE)
+      - lua: assert(ctx.vars.VALUE == "original")
+      - cmd: echo "value after lua = {{.VALUE}}"

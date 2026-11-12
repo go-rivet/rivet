@@ -25,6 +25,9 @@ func TestScript(t *testing.T) {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() {
+			if entry.Name() == "lua" && !cgoEnabled {
+				continue
+			}
 			dirs = append(dirs, filepath.Join(root, entry.Name()))
 		}
 	}

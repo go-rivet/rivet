@@ -18,6 +18,7 @@ import (
 	"github.com/go-rivet/rivet/internal/execext"
 	"github.com/go-rivet/rivet/internal/fingerprint"
 	"github.com/go-rivet/rivet/internal/hash"
+	"github.com/go-rivet/rivet/internal/luascript"
 	"github.com/go-rivet/rivet/internal/output"
 	"github.com/go-rivet/rivet/internal/prompt"
 	"github.com/go-rivet/rivet/internal/slicesext"
@@ -448,6 +449,7 @@ func (e *Executor) runDeferred(taskCtx context.Context, t *ast.Task, call *Call,
 	}
 
 	cmd.Cmd = templater.ReplaceWithExtra(cmd.Cmd, cache, extra)
+	cmd.Lua = templater.ReplaceWithExtra(cmd.Lua, cache, extra)
 	cmd.Task = templater.ReplaceWithExtra(cmd.Task, cache, extra)
 	cmd.If = templater.ReplaceWithExtra(cmd.If, cache, extra)
 	cmd.Vars = templater.ReplaceVarsWithExtra(cmd.Vars, cache, extra)
@@ -481,6 +483,45 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		var exitCode interp.ExitStatus
 		if errors.As(err, &exitCode) && cmd.IgnoreError {
 			rlog.Debugf(ctx, "task: [%s] task error ignored: %v\n", t.Name(), err)
+			return nil
+		}
+		return err
+	case cmd.Lua != "":
+		if !shouldRunOnCurrentPlatform(cmd.Platforms) {
+			rlog.Debugf(ctx, "task: [%s] Lua script not for current platform - ignored\n", t.Name())
+			return nil
+		}
+		if e.Dry {
+			return nil
+		}
+		vars, err := e.taskVars(t, call, false)
+		if err != nil {
+			return fmt.Errorf("task: failed to get variables: %w", err)
+		}
+		luaVars := vars.ToCacheMap()
+		if e.TaskfileDAG != nil {
+			luaVars, err = e.v42LuaVars(t, call, vars)
+			if err != nil {
+				return fmt.Errorf("task: failed to get Lua variables: %w", err)
+			}
+		}
+		outputWrapper := e.Output
+		if t.Interactive {
+			outputWrapper = output.Passthrough{}
+		}
+		cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars)}
+		stdOut, _, closer := outputWrapper.WrapWriter(e.Stdout, e.Stderr, t.Prefix, cache)
+		rlog.Infof(ctx, "task: [%s] running Lua script\n", t.Name())
+		err = luascript.Run(ctx, &luascript.Options{
+			Script: cmd.Lua,
+			Vars:   luaVars,
+			Stdout: stdOut,
+		})
+		if closeErr := closer(err); closeErr != nil {
+			rlog.Errorf(ctx, "task: unable to close Lua output writer: %v\n", closeErr)
+		}
+		if err != nil && cmd.IgnoreError {
+			rlog.Debugf(ctx, "task: [%s] Lua script error ignored: %v\n", t.Name(), err)
 			return nil
 		}
 		return err

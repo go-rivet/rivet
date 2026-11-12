@@ -10,6 +10,7 @@ import (
 // Cmd is a task command
 type Cmd struct {
 	Cmd         string
+	Lua         string
 	Task        string
 	For         *For
 	If          string
@@ -27,6 +28,7 @@ func (c *Cmd) DeepCopy() *Cmd {
 	}
 	return &Cmd{
 		Cmd:         c.Cmd,
+		Lua:         c.Lua,
 		Task:        c.Task,
 		For:         c.For.DeepCopy(),
 		If:          c.If,
@@ -51,7 +53,7 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var hasCmd, hasTask, hasDefer bool
+		var hasCmd, hasLua, hasTask, hasDefer bool
 		var deferBlock *Defer
 
 		for i := 0; i < len(node.Content); i += 2 {
@@ -62,6 +64,9 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			case "cmd":
 				c.Cmd = valNode.Value
 				hasCmd = true
+			case "lua":
+				c.Lua = valNode.Value
+				hasLua = true
 			case "task":
 				c.Task = valNode.Value
 				hasTask = true
@@ -86,6 +91,10 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			}
 		}
 
+		if hasLua && hasDefer {
+			return errors.NewTaskfileDecodeError(nil, node).WithMessage("Lua commands cannot be deferred")
+		}
+
 		if hasDefer && deferBlock != nil {
 			if deferBlock.Cmd != "" {
 				c.Defer = true
@@ -101,8 +110,19 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			return nil
 		}
 
+		if hasLua && (hasCmd || hasTask) {
+			return errors.NewTaskfileDecodeError(nil, node).WithMessage("command cannot have more than one of lua, cmd, or task")
+		}
+
 		// Handle explicit task calls
 		if hasTask && c.Task != "" {
+			return nil
+		}
+
+		if hasLua {
+			if c.Lua == "" {
+				return errors.NewTaskfileDecodeError(nil, node).WithMessage("Lua script cannot be empty")
+			}
 			return nil
 		}
 

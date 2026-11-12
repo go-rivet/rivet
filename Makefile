@@ -1,12 +1,22 @@
 # Variables
 BINARY_NAME=rivet
 SRC_DIR=./cmd/rivet
-SRCS := $(shell find . -name '*.go')
+SRCS := $(shell find . -type f \( -name '*.go' -o -name '*.c' -o -name '*.h' \))
 BUILD_DIR=bin
 DIST_DIR     = dist
 MODULE_PATH = github.com/go-rivet/rivet/internal/version
 GOLANGCI_LINT_VERSION := v2.12.2
 GOTESTSUM_VERSION := v1.12.0
+ZIG ?= zig
+ZIG_VERSION ?= 0.14.1
+TOOLCHAIN_IMAGE ?= rivet-build-toolchain:local
+TOOLCHAIN_CACHE_DIR ?= $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/rivet/toolchain
+TOOLCHAIN_CACHE_FLAGS = -v "$(TOOLCHAIN_CACHE_DIR):/cache" -e GOPATH=/cache/go -e GOMODCACHE=/cache/mod -e GOCACHE=/cache/go-build -e ZIG_GLOBAL_CACHE_DIR=/cache/zig
+GO_VERSION ?= $(shell awk '$$1 == "go" { print $$2; exit }' go.mod)
+MACOS_SDK_PATH ?= $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
+CONTAINER_SDK_MOUNT = $(if $(MACOS_SDK_PATH),-v "$(MACOS_SDK_PATH):/opt/MacOSX.sdk:ro" -e MACOS_SDK_PATH=/opt/MacOSX.sdk,)
+TARGET_OS ?= $(if $(GOOS),$(GOOS),$(shell uname -s | tr '[:upper:]' '[:lower:]' | sed 's/^mingw.*/windows/;s/^msys.*/windows/'))
+TARGET_ARCH ?= $(if $(GOARCH),$(GOARCH),$(shell uname -m | sed 's/^x86_64$$/amd64/;s/^aarch64$$/arm64/;s/^arm64$$/arm64/;s/^armv7l$$/arm/;s/^i[3-6]86$$/386/'))
 
 # Dynamic build information extracted from local environment
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
@@ -14,10 +24,15 @@ COMMIT_SHA  = $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 BUILD_TIME  = $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Consolidate Linker Injection Flags (-X sets the string value at link time)
-LD_FLAGS = -s -w -extldflags \"-static\" \
+LD_FLAGS = -s -w \
            -X '$(MODULE_PATH).Version=$(VERSION)' \
            -X '$(MODULE_PATH).CommitSHA=$(COMMIT_SHA)' \
            -X '$(MODULE_PATH).BuildTime=$(BUILD_TIME)'
+LINUX_LD_FLAGS = -extldflags '-static -s'
+NATIVE_LD_FLAGS = $(LD_FLAGS) $(if $(filter linux,$(shell go env GOOS)),$(LINUX_LD_FLAGS),)
+NATIVE_PLATFORM = $(shell go env GOOS)/$(shell go env GOARCH)
+NATIVE_ZIG_TARGET = $(call zig_target,$(if $(filter linux/arm,$(NATIVE_PLATFORM)),linux/arm/$(shell go env GOARM),$(NATIVE_PLATFORM)))
+NATIVE_SDK_FLAGS = $(if $(filter darwin,$(shell go env GOOS)),-isysroot $(MACOS_SDK_PATH),)
 
 # Target OS and Architectures (The GoReleaser matrix equivalent)
 PLATFORMS    = darwin/amd64 \
@@ -32,12 +47,11 @@ PLATFORMS    = darwin/amd64 \
 
 # Dynamically locate the user's Go path or Go bin directory
 GOPATH=$(shell go env GOPATH)
-GOBIN=$(shell go env GOBIN)
-ifeq ($(GOBIN),)
-GOBIN=$(GOPATH)/bin
-endif
+GOBIN=$(or $(shell go env GOBIN),$(GOPATH)/bin)
 
-.PHONY: all build clean run release test test-42 test-all bench bench-all bench-mak generate generate-fixtures mod lint install help $(PLATFORMS)
+.PHONY: all build clean run release test test-42 test-all bench bench-all bench-mak generate generate-fixtures mod lint install help
+.PHONY: .toolchain .build .release .checksums $(addprefix .release/,$(PLATFORMS))
+.NOTPARALLEL: .release
 
 # Default target runs help to guide the user
 all: help
@@ -56,15 +70,25 @@ END { for (n in failed) if (length(buf[n])) printf "\n=== output of %s\n%s", n, 
 rm -f $$out; exit $$rc
 endef
 
-## build: Build the binary for the current OS/Architecture
+## build: Build the binary for the current OS/Architecture using Docker
 build: $(BUILD_DIR)/$(BINARY_NAME)
-$(BUILD_DIR)/$(BINARY_NAME): $(SRCS)
+$(BUILD_DIR)/$(BINARY_NAME): $(SRCS) Makefile tools/toolchain/Dockerfile go.mod go.sum
+	$(MAKE) .toolchain
+	@mkdir -p "$(TOOLCHAIN_CACHE_DIR)"
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp $(TOOLCHAIN_CACHE_FLAGS) \
+		$(CONTAINER_SDK_MOUNT) -e GOOS="$(TARGET_OS)" -e GOARCH="$(TARGET_ARCH)" $(if $(filter arm,$(TARGET_ARCH)),-e GOARM=$(if $(GOARM),$(GOARM),7),) \
+		-v "$(CURDIR):/src" -w /src $(TOOLCHAIN_IMAGE) \
+		make .build BUILD_DIR="$(BUILD_DIR)" BINARY_NAME="$(BINARY_NAME)" SRC_DIR="$(SRC_DIR)" \
+		VERSION="$(VERSION)" COMMIT_SHA="$(COMMIT_SHA)" BUILD_TIME="$(BUILD_TIME)"
+
+.build:
+	@test -n "$(NATIVE_ZIG_TARGET)" || { echo "Unsupported build platform: $(NATIVE_PLATFORM)" >&2; exit 1; }
+	$(if $(filter darwin,$(shell go env GOOS)),$(if $(strip $(MACOS_SDK_PATH)),,@echo "A macOS SDK is required for Darwin cgo builds; set MACOS_SDK_PATH." >&2; exit 1),)
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 go build \
-		-a \
+	CC="$(ZIG) cc -target $(NATIVE_ZIG_TARGET) $(NATIVE_SDK_FLAGS)" CGO_ENABLED=1 go build \
 		-tags "netgo osusergo" \
-		-ldflags "$(LD_FLAGS)" \
+		-ldflags "$(NATIVE_LD_FLAGS)" \
 		-o $(BUILD_DIR)/$(BINARY_NAME) $(SRC_DIR)
 	@chmod +x $(BUILD_DIR)/$(BINARY_NAME)
 	@echo "Binary built at $(BUILD_DIR)/$(BINARY_NAME)"
@@ -84,17 +108,17 @@ run: build
 test:
 	@echo "Running tests..." 
 #	gotestsum --format short-verbose -- -failfast -count=1 -run="$(TEST)" ./...
-	@$(call quiet_test,go test -v -count=1 -run="$(TEST)" ./...)
+	@$(call quiet_test,CC="$(ZIG) cc" CGO_ENABLED=1 go test -v -count=1 -run="$(TEST)" ./...)
 
 ## test-42: Run the v42 script tests (TEST=name filters, e.g. TEST=v42_hello)
 test-42:
 	@echo "Running v42 script tests..."
-	@$(call quiet_test,go test -v -count=1 ./cmd/rivet -run '^TestScript/$(TEST)')
+	@$(call quiet_test,CC="$(ZIG) cc" CGO_ENABLED=1 go test -v -count=1 ./cmd/rivet -run '^TestScript/$(TEST)')
 
 ## test-all: Run unit tests and other integration tests
 test-all:
 	@echo "Running tests..."
-	@$(call quiet_test,go test -v -race ./... -tags 'signals watch')
+	@$(call quiet_test,CC="$(ZIG) cc" CGO_ENABLED=1 go test -v -race ./... -tags 'signals watch')
 
 ## bench: Run the selected benchmark (BENCH=BenchmarkRivet, BENCHTIME=3x by default); PROFILE=1 collects profiles
 BENCH_DIR = bench_profiles
@@ -206,17 +230,30 @@ help:
 	@echo "  make test TEST=TestFoo"
 	@echo "  make test-e2e TEST=task/transform/task.transform.patsubst.txtar"
 
+## release: Build release artifacts for all platforms using Docker
+release: .toolchain
+	$(if $(filter darwin/%,$(PLATFORMS)),@test -n "$(MACOS_SDK_PATH)" && test -d "$(MACOS_SDK_PATH)" || { echo "A macOS SDK is required for Darwin cgo builds; set MACOS_SDK_PATH." >&2; exit 1; },)
+	@mkdir -p "$(TOOLCHAIN_CACHE_DIR)"
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp $(TOOLCHAIN_CACHE_FLAGS) $(CONTAINER_SDK_MOUNT) \
+		-v "$(CURDIR):/src" -w /src $(TOOLCHAIN_IMAGE) \
+		make .release BUILD_DIR="$(BUILD_DIR)" DIST_DIR="$(DIST_DIR)" BINARY_NAME="$(BINARY_NAME)" SRC_DIR="$(SRC_DIR)" PLATFORMS="$(PLATFORMS)" \
+		VERSION="$(VERSION)" COMMIT_SHA="$(COMMIT_SHA)" BUILD_TIME="$(BUILD_TIME)"
 
+.toolchain:
+	docker build \
+		--build-arg GO_VERSION=$(GO_VERSION) \
+		--build-arg ZIG_VERSION=$(ZIG_VERSION) \
+		-f tools/toolchain/Dockerfile \
+		-t $(TOOLCHAIN_IMAGE) .
 
-
-# Entry point for building everything, packaging, and generating checksums
-release: clean $(PLATFORMS) checksums
+.release: clean $(addprefix .release/,$(PLATFORMS)) .checksums
 
 # Dynamic matrix execution block
-$(PLATFORMS):
-	$(eval OS := $(word 1,$(subst /, ,$@)))
-	$(eval ARCH := $(word 2,$(subst /, ,$@)))
-	$(eval SUBARCH := $(word 3,$(subst /, ,$@)))
+$(addprefix .release/,$(PLATFORMS)):
+	$(eval PLATFORM := $(patsubst .release/%,%,$@))
+	$(eval OS := $(word 1,$(subst /, ,$(PLATFORM))))
+	$(eval ARCH := $(word 2,$(subst /, ,$(PLATFORM))))
+	$(eval SUBARCH := $(word 3,$(subst /, ,$(PLATFORM))))
 	$(eval EXT := $(if $(filter windows,$(OS)),.exe,))
 	
 	# Determine naming and sub-architecture constraints (GOARM / GO386)
@@ -224,16 +261,17 @@ $(PLATFORMS):
 	$(eval GOARM_FLAG := $(if $(filter arm,$(ARCH)),$(if $(SUBARCH),$(SUBARCH),7),))
 	$(eval GO386_FLAG := $(if $(filter 386,$(ARCH)),sse2,))
 	$(eval OUT_NAME := $(BINARY_NAME)-$(OS)-$(FILENAME_ARCH))
+	$(eval ZIG_TARGET := $(call zig_target,$(PLATFORM)))
 	
 	@echo "Building for $(OS) ($(FILENAME_ARCH))..."
 	@mkdir -p $(DIST_DIR)
+	$(if $(filter darwin,$(OS)),$(if $(strip $(MACOS_SDK_PATH)),,@echo "A macOS SDK is required for Darwin cgo builds; set MACOS_SDK_PATH or build on macOS." >&2; exit 1),)
 	
-	# Compile using your exact static linking safety flags and mapped environment variables
-	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) GOARM=$(GOARM_FLAG) GO386=$(GO386_FLAG) go build \
-		-a \
+	# Linux uses musl and static linking; other targets use Zig's platform toolchain.
+	CC="$(ZIG) cc -target $(ZIG_TARGET) $(if $(filter darwin,$(OS)),-isysroot $(MACOS_SDK_PATH),)" CGO_ENABLED=1 GOOS=$(OS) GOARCH=$(ARCH) GOARM=$(GOARM_FLAG) GO386=$(GO386_FLAG) go build \
 		-trimpath \
 		-tags "netgo osusergo" \
-		-ldflags "$(LD_FLAGS)" \
+		-ldflags "$(LD_FLAGS) $(if $(filter linux,$(OS)),$(LINUX_LD_FLAGS),)" \
 		-o $(DIST_DIR)/$(OUT_NAME)$(EXT) $(SRC_DIR)
 	
 	@if [ "$(OS)" != "windows" ]; then chmod +x $(DIST_DIR)/$(OUT_NAME)$(EXT); fi
@@ -249,7 +287,9 @@ $(PLATFORMS):
 	fi
 
 # Generate GoReleaser-style sha256 checksum tracking verification file
-checksums:
+.checksums:
 	@echo "=> Generating sha256 checksums..."
 	@cd $(DIST_DIR) && shasum -a 256 * > $(BINARY_NAME)_checksums.txt
 	@echo "=> Release artifacts generated successfully in ./$(DIST_DIR)/"
+
+zig_target = $(if $(filter darwin/amd64,$1),x86_64-macos,$(if $(filter darwin/arm64,$1),aarch64-macos,$(if $(filter linux/386,$1),x86-linux-musl,$(if $(filter linux/amd64,$1),x86_64-linux-musl,$(if $(filter linux/arm64,$1),aarch64-linux-musl,$(if $(filter linux/arm/7,$1),arm-linux-musleabihf,$(if $(filter windows/386,$1),x86-windows-gnu,$(if $(filter windows/amd64,$1),x86_64-windows-gnu,$(if $(filter windows/arm64,$1),aarch64-windows-gnu,)))))))))

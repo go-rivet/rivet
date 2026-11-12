@@ -1,0 +1,22 @@
+rivet run
+cmp stdout expect.stdout
+cmp stderr expect.stderr
+
+-- expect.stdout --
+joined = one two three
+line count = 3
+second line = two
+last line empty = true
+-- expect.stderr --
+-- Taskfile.yml --
+version: 42
+tasks:
+  run:
+    cmds:
+      - lua: |
+          local fn = rivet.fn
+          print("joined = " .. fn.catLines("one\r\ntwo\nthree"))
+          local lines = fn.splitLines("one\r\ntwo\n")
+          print("line count = " .. #lines)
+          print("second line = " .. lines[2])
+          print("last line empty = " .. tostring(lines[3] == ""))

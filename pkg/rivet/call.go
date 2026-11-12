@@ -9,6 +9,7 @@ const (
 	CallKindDirect CallKind = "direct" // requested directly (CLI arg or Run())
 	CallKindDep    CallKind = "dep"    // invoked as a task's dependency
 	CallKindCmd    CallKind = "cmd"    // invoked via a cmd: task: reference
+	CallKindLua    CallKind = "lua"    // invoked by a Lua script
 )
 
 // Call is the parameters to a task call

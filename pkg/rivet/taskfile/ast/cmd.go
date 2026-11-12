@@ -10,6 +10,7 @@ import (
 // Cmd is a task command
 type Cmd struct {
 	Cmd         string
+	Lua         string
 	Task        string
 	For         *For
 	If          string
@@ -27,6 +28,7 @@ func (c *Cmd) DeepCopy() *Cmd {
 	}
 	return &Cmd{
 		Cmd:         c.Cmd,
+		Lua:         c.Lua,
 		Task:        c.Task,
 		For:         c.For.DeepCopy(),
 		If:          c.If,
@@ -62,6 +64,8 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			case "cmd":
 				c.Cmd = valNode.Value
 				hasCmd = true
+			case "lua":
+				return errors.NewTaskfileDecodeError(nil, node).WithMessage("Lua commands are only supported in version 42 Taskfiles")
 			case "task":
 				c.Task = valNode.Value
 				hasTask = true

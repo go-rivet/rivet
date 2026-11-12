@@ -1,0 +1,22 @@
+rivet run
+cmp stdout expect.stdout
+cmp stderr expect.stderr
+
+-- expect.stdout --
+lua print marker
+-- expect.stderr --
+lua warning marker
+lua log marker
+-- Taskfile.yml --
+version: 42
+tasks:
+  run:
+    cmds:
+      - lua: |
+          assert(log == nil)
+          print("lua print marker")
+          rivet.log.trace("lua trace marker")
+          rivet.log.debug("lua debug marker")
+          rivet.log.info("lua info marker")
+          rivet.log.warn("lua warning marker")
+          rivet.log.error("lua log marker")

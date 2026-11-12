@@ -115,6 +115,7 @@ func cmdToRuntime(c *Cmd) *ast.Cmd {
 	}
 	return &ast.Cmd{
 		Cmd:         c.Cmd,
+		Lua:         c.Lua,
 		Task:        c.Task,
 		For:         forToRuntime(c.For),
 		If:          c.If,

@@ -98,9 +98,17 @@ func (e *Executor) namespacedVars(t *ast.Task, call *Call, vars *ast.Vars) templ
 	if e.TaskfileDAG == nil {
 		return nil
 	}
-	scope, err := e.v42Scope(t, call)
+	scope, err := e.v42TaskScope(t, call, vars)
 	if err != nil {
 		return func([]string) map[string]any { return nil }
+	}
+	return scope.Resolve
+}
+
+func (e *Executor) v42TaskScope(t *ast.Task, call *Call, vars *ast.Vars) (*namespace.Scope, error) {
+	scope, err := e.v42Scope(t, call)
+	if err != nil {
+		return nil, err
 	}
 	scope.Local = make(map[string]any)
 	taskVars := e.taskVarDeclarations(t)
@@ -115,7 +123,7 @@ func (e *Executor) namespacedVars(t *ast.Task, call *Call, vars *ast.Vars) templ
 		addLocalVars(call.Vars)
 	}
 	addLocalVars(taskVars)
-	return scope.Resolve
+	return scope, nil
 }
 
 func setLocalVar(local map[string]any, name string, value ast.Var) {
@@ -127,6 +135,45 @@ func setLocalVar(local map[string]any, name string, value ast.Var) {
 	} else {
 		local[name] = value.Value
 	}
+}
+
+func (e *Executor) v42LuaVars(t *ast.Task, call *Call, vars *ast.Vars) (map[string]any, error) {
+	scope, err := e.v42TaskScope(t, call, vars)
+	if err != nil {
+		return nil, err
+	}
+	taskVars := e.taskVarDeclarations(t)
+
+	result := maps.Clone(scope.Env)
+	maps.Copy(result, scope.Special)
+	paths := []string{""}
+	if t != nil && t.Namespace != "" {
+		paths = append(paths, t.Namespace)
+	}
+	for _, path := range paths {
+		for name := range e.TaskfileDAG.Vars(path) {
+			ref := ":" + name
+			if path != "" {
+				ref = path + ast.NamespaceSeparator + name
+			}
+			if value, ok := scope.Resolve([]string{ref})[ref]; ok {
+				result[name] = value
+			}
+		}
+	}
+
+	overlay := func(declarations *ast.Vars) {
+		for name := range declarations.Keys() {
+			if variable, ok := vars.Get(name); ok {
+				setLocalVar(result, name, variable)
+			}
+		}
+	}
+	if call != nil {
+		overlay(call.Vars)
+	}
+	overlay(taskVars)
+	return result, nil
 }
 
 // v42TaskVars builds the vars handed to the task: the environment and special

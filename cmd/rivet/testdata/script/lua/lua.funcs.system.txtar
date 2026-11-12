@@ -1,0 +1,23 @@
+rivet run
+cmp stdout expect.stdout
+cmp stderr expect.stderr
+
+-- expect.stdout --
+os and arch available = true
+cpu count positive = true
+executable extension valid = true
+uuid valid = true
+-- expect.stderr --
+-- Taskfile.yml --
+version: 42
+tasks:
+  run:
+    cmds:
+      - lua: |
+          local fn = rivet.fn
+          print("os and arch available = " .. tostring(fn.OS() ~= "" and fn.ARCH() ~= ""))
+          print("cpu count positive = " .. tostring(fn.numCPU() > 0))
+          local ext = fn.OS() == "windows" and ".exe" or ""
+          print("executable extension valid = " .. tostring(fn.exeExt() == ext))
+          local uuid = fn.uuid()
+          print("uuid valid = " .. tostring(uuid:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-4%x%x%x%-[89ab]%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") ~= nil))

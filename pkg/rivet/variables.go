@@ -250,6 +250,7 @@ func (e *Executor) compiledTaskWithTimestampCache(call *Call, evaluateShVars boo
 					}
 					newCmd := cmd.DeepCopy()
 					newCmd.Cmd = templater.ReplaceWithExtra(cmd.Cmd, cache, extra)
+					newCmd.Lua = templater.ReplaceWithExtra(cmd.Lua, cache, extra)
 					newCmd.Task = templater.ReplaceWithExtra(cmd.Task, cache, extra)
 					newCmd.If = templater.ReplaceWithExtra(cmd.If, cache, extra)
 					newCmd.Vars = templater.ReplaceVarsWithExtra(cmd.Vars, cache, extra)
@@ -265,6 +266,7 @@ func (e *Executor) compiledTaskWithTimestampCache(call *Call, evaluateShVars boo
 			}
 			newCmd := cmd.DeepCopy()
 			newCmd.Cmd = templater.Replace(cmd.Cmd, cache)
+			newCmd.Lua = templater.Replace(cmd.Lua, cache)
 			newCmd.Task = templater.Replace(cmd.Task, cache)
 			newCmd.If = templater.Replace(cmd.If, cache)
 			newCmd.Vars = templater.ReplaceVars(cmd.Vars, cache)

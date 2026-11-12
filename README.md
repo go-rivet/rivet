@@ -30,7 +30,7 @@ RIVET_VERSION="v0.2.0" curl -sSL https://raw.githubusercontent.com/go-rivet/rive
 
 ### Release Artifacts
 
-Statically compiled binaries are available for multiple operating systems and architectures. Download the matching executable for your host platform directly from the **GitHub Releases** panel:
+Release binaries are available for multiple operating systems and architectures. Linux release binaries are statically linked; macOS and Windows binaries use their platform system libraries. Download the matching executable for your host platform directly from the **GitHub Releases** panel:
 
 *   **Linux:** `linux/amd64`, `linux/arm64`, `linux/386`
 *   **macOS:** `darwin/amd64`, `darwin/arm64`
@@ -75,7 +75,15 @@ docker run --rm -it ghcr.io/go-rivet/rivet:latest-alpine
 
 ## Development
 
-All build and testing routines are managed via standard automation commands. Binaries are compiled to be 100% statically linked with zero dependencies on system host libraries.
+`make build` uses Docker and the pinned Go and Zig toolchain to compile the embedded Lua sources with cgo; Go and Zig are not required on the host for this target. Building a macOS binary requires a macOS SDK: set `MACOS_SDK_PATH` to an SDK available on the host so it can be mounted read-only (on macOS, the installed SDK is detected automatically).
+
+The container caches Go modules, compiled packages, and Zig artifacts in `${XDG_CACHE_HOME:-$HOME/.cache}/rivet/toolchain`. The first build downloads missing dependencies; subsequent builds reuse them. Set `TOOLCHAIN_CACHE_DIR` to use a different cache directory.
+
+`make release` also uses the containerized toolchain and requires a macOS SDK.
+When using Docker through a virtual machine, the SDK and workspace must be
+available to the Docker daemon as bind mounts. The release workflow runs on
+macOS and makes the runner's installed SDK available to Docker.
+The test targets currently run on the host and require Go and Zig 0.14.1.
 
 ```bash
 # Setup a development environment.

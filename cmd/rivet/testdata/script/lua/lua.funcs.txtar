@@ -1,0 +1,39 @@
+rivet run
+cmp stdout expect.stdout
+cmp stderr expect.stderr
+
+! rivet fail
+stderr 'rivet.fn.fromYaml'
+
+-- expect.stdout --
+function namespace = true
+invalid argument caught = true
+cyclic table caught = true
+sparse table caught = true
+mixed table caught = true
+invalid yaml caught = true
+bridge still usable = true
+-- expect.stderr --
+-- Taskfile.yml --
+version: 42
+tasks:
+  run:
+    cmds:
+      - lua: |
+          local fn = rivet.fn
+          print("function namespace = " .. tostring(type(fn) == "table" and type(rivet.log) == "table"))
+          local function catches(f, message)
+            local ok, err = pcall(f)
+            return not ok and type(err) == "string" and err:find(message, 1, true) ~= nil
+          end
+          print("invalid argument caught = " .. tostring(catches(function() fn.joinPath(1) end, "argument 1")))
+          local cyclic = {}
+          cyclic.self = cyclic
+          print("cyclic table caught = " .. tostring(catches(function() fn.toYaml(cyclic) end, "cyclic")))
+          print("sparse table caught = " .. tostring(catches(function() fn.toYaml({[1] = "one", [3] = "three"}) end, "contiguous")))
+          print("mixed table caught = " .. tostring(catches(function() fn.toYaml({[1] = "one", key = "value"}) end, "mix")))
+          print("invalid yaml caught = " .. tostring(catches(function() fn.fromYaml("[") end, "rivet.fn.fromYaml")))
+          print("bridge still usable = " .. tostring(fn.catLines("one\ntwo") == "one two"))
+  fail:
+    cmds:
+      - lua: rivet.fn.fromYaml("[")

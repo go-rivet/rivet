@@ -1,0 +1,48 @@
+rivet return-values
+cmp stdout expect.return.stdout
+
+rivet catch-error
+cmp stdout expect.catch.stdout
+
+rivet assert-success
+
+! rivet assert-failure
+stderr 'expected assertion failure'
+
+! rivet fail
+stderr 'expected lua failure'
+
+! rivet exit
+stderr 'os.exit is disabled'
+
+-- expect.return.stdout --
+before return
+-- expect.catch.stdout --
+caught lua failure
+-- Taskfile.yml --
+version: 42
+tasks:
+  return-values:
+    cmds:
+      - lua: |
+          print("before return")
+          return 42, false, "ignored"
+  catch-error:
+    cmds:
+      - lua: |
+          local ok, message = pcall(function() error("caught lua failure") end)
+          assert(not ok)
+          assert(string.find(message, "caught lua failure", 1, true))
+          print("caught lua failure")
+  assert-success:
+    cmds:
+      - lua: assert(1 + 1 == 2)
+  assert-failure:
+    cmds:
+      - lua: assert(false, "expected assertion failure")
+  fail:
+    cmds:
+      - lua: error("expected lua failure")
+  exit:
+    cmds:
+      - lua: os.exit(0)
