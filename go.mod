@@ -11,9 +11,9 @@ require (
 	github.com/sebdah/goldie/v2 v2.8.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v3 v3.0.6
-	golang.org/x/sync v0.24.0
-	golang.org/x/term v0.47.0
-	golang.org/x/text v0.43.0
+	golang.org/x/sync v0.25.0
+	golang.org/x/term v0.48.0
+	golang.org/x/text v0.44.0
 	mvdan.cc/sh/moreinterp v0.0.0-20260120230322-19def062a997
 	mvdan.cc/sh/v3 v3.14.1
 )
@@ -28,6 +28,6 @@ require (
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/u-root/u-root v0.15.1-0.20251208185023-2f8c7e763cf8 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 )
