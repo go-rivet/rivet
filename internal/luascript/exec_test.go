@@ -46,6 +46,31 @@ func TestRunUsesFreshStateAndVariableSnapshot(t *testing.T) {
 	}
 }
 
+func TestRunCopiesStringValues(t *testing.T) {
+	type namedString string
+	opts := &Options{
+		Vars: map[string]any{
+			"":        "",
+			"a\x00b":  "x\x00y",
+			"UNICODE": "Grüße",
+			"NAMED":   namedString("named"),
+			"NESTED":  map[string]any{"value": "original"},
+		},
+		Ctx: map[string]any{"root": map[string]any{"EMPTY": "", "BINARY": "a\x00b"}},
+		Script: `
+			assert(ctx.vars[""] == "" and vars[""] == "")
+			assert(ctx.vars["a\0b"] == "x\0y" and vars["a\0b"] == "x\0y")
+			assert(ctx.vars.UNICODE == "Grüße" and vars.NAMED == "named")
+			assert(ctx.root.EMPTY == "" and ctx.root.BINARY == "a\0b")
+			ctx.vars.NESTED.value = "changed"
+			assert(vars.NESTED.value == "original")
+		`,
+	}
+	if err := Run(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunCreatesEmptyVariableContext(t *testing.T) {
 	err := Run(context.Background(), &Options{
 		Script: `assert(type(ctx.vars) == "table" and next(ctx.vars) == nil); assert(log == nil)`,

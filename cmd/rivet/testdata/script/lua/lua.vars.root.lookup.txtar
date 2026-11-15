@@ -1,0 +1,74 @@
+# Root vars are unqualified in root tasks and qualified in namespace tasks.
+env RIVET_TEST_SHADOW=environment
+rivet root-lua
+cmp stdout expect.root-lua.stdout
+
+rivet ns:lua
+cmp stdout expect.ns-lua.stdout
+
+rivet ns:rooted
+cmp stdout expect.rooted.stdout
+
+rivet ns:shadow
+cmp stdout expect.shadow.stdout
+
+! rivet ns:relative
+cmp stderr expect.relative.stderr
+
+-- expect.root-lua.stdout --
+ctx.vars=global
+ctx.vars[":RIVET_TEST_VALUE"]=global
+ctx.global=global
+ctx.root=global
+ctx.vars.shadow=global
+-- expect.ns-lua.stdout --
+ctx.vars=nil
+ctx.vars[":RIVET_TEST_VALUE"]=global
+ctx.global=nil
+ctx.root=global
+ctx.vars.shadow=environment
+ctx.global.shadow=environment
+ctx.vars[":RIVET_TEST_SHADOW"]=global
+-- expect.rooted.stdout --
+template=global
+-- expect.shadow.stdout --
+template=environment/global
+-- expect.relative.stderr --
+task: variable ".RIVET_TEST_VALUE" is not defined
+-- Taskfile.yml --
+version: 42
+vars:
+  RIVET_TEST_VALUE: global
+  RIVET_TEST_SHADOW: global
+tasks:
+  root-lua:
+    cmds:
+      - lua: |
+          print("ctx.vars=" .. tostring(ctx.vars.RIVET_TEST_VALUE))
+          print("ctx.vars[\":RIVET_TEST_VALUE\"]=" .. ctx.vars[":RIVET_TEST_VALUE"])
+          print("ctx.global=" .. ctx.global.RIVET_TEST_VALUE)
+          print("ctx.root=" .. ctx.root.RIVET_TEST_VALUE)
+          print("ctx.vars.shadow=" .. ctx.vars.RIVET_TEST_SHADOW)
+---
+version: 42
+namespace: ns
+tasks:
+  lua:
+    cmds:
+      - lua: |
+          print("ctx.vars=" .. tostring(ctx.vars.RIVET_TEST_VALUE))
+          print("ctx.vars[\":RIVET_TEST_VALUE\"]=" .. ctx.vars[":RIVET_TEST_VALUE"])
+          print("ctx.global=" .. tostring(ctx.global.RIVET_TEST_VALUE))
+          print("ctx.root=" .. ctx.root.RIVET_TEST_VALUE)
+          print("ctx.vars.shadow=" .. ctx.vars.RIVET_TEST_SHADOW)
+          print("ctx.global.shadow=" .. ctx.global.RIVET_TEST_SHADOW)
+          print("ctx.vars[\":RIVET_TEST_SHADOW\"]=" .. ctx.vars[":RIVET_TEST_SHADOW"])
+  rooted:
+    cmds:
+      - cmd: echo "template={{.:RIVET_TEST_VALUE}}"
+  shadow:
+    cmds:
+      - cmd: echo "template={{.RIVET_TEST_SHADOW}}/{{.:RIVET_TEST_SHADOW}}"
+  relative:
+    cmds:
+      - cmd: echo "template={{.RIVET_TEST_VALUE}}"

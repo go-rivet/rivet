@@ -1,0 +1,86 @@
+# Test 1: Basic cmd calling with variable usage
+rivet call
+cmp stdout expect.call.stdout
+
+# Test 2: Error handling with pcall
+rivet error-handling
+cmp stdout expect.error-handling.stdout
+
+# Test 3: Dynamic cmd generation in loop
+rivet dynamic-cmd
+cmp stdout expect.dynamic-cmd.stdout
+
+# Test 4: Cmd exit code failure
+! rivet exit-code-test
+
+# Test 5: Large output handling
+rivet large-output
+stdout '123456789'
+
+-- expect.call.stdout --
+FOO before Lua script = t_foo
+FOO before Lua script = g_foo
+FOO in Lua script = t_foo
+Foo in Lua cmd local = lua_foo
+Foo in Lua cmd task = t_foo
+-- expect.error-handling.stdout --
+Before error
+After error (recovered)
+Cmd executed successfully
+-- expect.dynamic-cmd.stdout --
+X=x1 Y=y1
+X=x2 Y=y2
+X=x3 Y=y3
+-- Taskfile.yml --
+version: 42
+vars:
+  FOO: g_foo
+
+tasks:
+  call:
+    vars:
+      FOO: t_foo
+    cmds:
+      - cmd: echo "FOO before Lua script = {{.FOO}}"
+      - cmd: echo "FOO before Lua script = {{.:FOO}}"
+      - lua: |
+          print("FOO in Lua script = " .. ctx.vars.FOO)
+          vars.FOO = "lua_foo"
+          rivet.cmd("echo Foo in Lua cmd local = " .. vars.FOO)
+          rivet.cmd("echo Foo in Lua cmd task = " .. ctx.vars.FOO)
+
+  error-handling:
+    cmds:
+      - lua: |
+          print("Before error")
+          local ok, err = pcall(function()
+            rivet.cmd("exit 1")
+          end)
+          if not ok then
+            print("After error (recovered)")
+          end
+          rivet.cmd("echo Cmd executed successfully")
+
+  dynamic-cmd:
+    cmds:
+      - lua: |
+          for i = 1, 3 do
+            local x = "x" .. i
+            local y = "y" .. i
+            rivet.cmd("echo X=" .. x .. " Y=" .. y)
+          end
+
+  exit-code-test:
+    cmds:
+      - lua: |
+          rivet.cmd("exit 1")
+
+  large-output:
+    cmds:
+      - lua: |
+          print("Testing large output:")
+          local output = ""
+          for i = 1, 100 do
+            output = output .. i
+          end
+          print(output)

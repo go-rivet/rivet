@@ -19,6 +19,7 @@ import (
 	"math"
 	"reflect"
 	"sort"
+	"strings"
 	"unsafe"
 
 	"github.com/go-rivet/rivet/internal/templater/task"
@@ -183,6 +184,18 @@ func callTaskFunc(name string, args []any) (any, error) {
 			return nil, err
 		}
 		return task.TaskFuncs[name].(func(string) []string)(values[0]), nil
+	case "split":
+		values, err := stringsArg(2, 2)
+		if err != nil {
+			return nil, err
+		}
+		parts := []string{}
+		for _, part := range strings.Split(values[0], values[1]) {
+			if part = strings.TrimSpace(part); part != "" {
+				parts = append(parts, part)
+			}
+		}
+		return parts, nil
 	case "absPath", "shellQuote":
 		values, err := stringsArg(1, 1)
 		if err != nil {
@@ -377,4 +390,66 @@ func makeFuncValue(value reflect.Value, depth int) (*C.rivet_lua_value, error) {
 		}
 	}
 	return out, nil
+}
+
+//export goLuaTask
+func goLuaTask(contextID C.uint64_t, cTaskName *C.char, L *C.lua_State, varIndex C.int) (result *C.rivet_lua_value) {
+	taskName := C.GoString(cTaskName)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = errorValue(fmt.Errorf("rivet.task: Go callback panic (%T)", recovered))
+		}
+	}()
+
+	ctxValue, ok := logContexts.Load(uint64(contextID))
+	if !ok {
+		return errorValue(fmt.Errorf("rivet.task: context not found"))
+	}
+	runCtx := ctxValue.(runContext)
+	if runCtx.taskRunner == nil {
+		return errorValue(fmt.Errorf("rivet.task: task runner not available"))
+	}
+
+	vars, err := readFuncValue(L, varIndex, 0, make(map[unsafe.Pointer]bool))
+	if err != nil {
+		return errorValue(fmt.Errorf("rivet.task: failed to read variables: %w", err))
+	}
+
+	varsMap, ok := vars.(map[string]any)
+	if !ok {
+		return errorValue(fmt.Errorf("rivet.task: variables must be a map"))
+	}
+
+	if err := runCtx.taskRunner(runCtx.ctx, taskName, varsMap); err != nil {
+		return errorValue(fmt.Errorf("rivet.task: %w", err))
+	}
+
+	result = newFuncValue(C.RIVET_NIL)
+	return result
+}
+
+//export goLuaCmd
+func goLuaCmd(contextID C.uint64_t, cCmd *C.char) (result *C.rivet_lua_value) {
+	cmd := C.GoString(cCmd)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = errorValue(fmt.Errorf("rivet.cmd: Go callback panic (%T)", recovered))
+		}
+	}()
+
+	ctxValue, ok := logContexts.Load(uint64(contextID))
+	if !ok {
+		return errorValue(fmt.Errorf("rivet.cmd: context not found"))
+	}
+	runCtx := ctxValue.(runContext)
+	if runCtx.cmdRunner == nil {
+		return errorValue(fmt.Errorf("rivet.cmd: cmd runner not available"))
+	}
+
+	if err := runCtx.cmdRunner(runCtx.ctx, cmd); err != nil {
+		return errorValue(fmt.Errorf("rivet.cmd: %w", err))
+	}
+
+	result = newFuncValue(C.RIVET_NIL)
+	return result
 }

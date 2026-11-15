@@ -7,6 +7,7 @@ joined = one two three
 line count = 3
 second line = two
 last line empty = true
+split = a|b|c
 -- expect.stderr --
 -- Taskfile.yml --
 version: 42
@@ -20,3 +21,4 @@ tasks:
           print("line count = " .. #lines)
           print("second line = " .. lines[2])
           print("last line empty = " .. tostring(lines[3] == ""))
+          print("split = " .. table.concat(fn.split(" a, b ,, c ", ","), "|"))

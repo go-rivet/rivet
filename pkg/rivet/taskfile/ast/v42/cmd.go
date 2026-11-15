@@ -7,13 +7,23 @@ import (
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
 )
 
+const multipleCommandTypesMessage = "command cannot have more than one of lua, cmd, or task"
+
+func hasMultipleCommandTypes(cmd, task, lua string) bool {
+	count := 0
+	for _, value := range []string{cmd, task, lua} {
+		if value != "" {
+			count++
+		}
+	}
+	return count > 1
+}
+
 // Cmd is a task command
 type Cmd struct {
 	Cmd         string
 	Lua         string
 	Task        string
-	For         *For
-	If          string
 	Set         []string
 	Shopt       []string
 	Vars        *Vars
@@ -30,8 +40,6 @@ func (c *Cmd) DeepCopy() *Cmd {
 		Cmd:         c.Cmd,
 		Lua:         c.Lua,
 		Task:        c.Task,
-		For:         c.For.DeepCopy(),
-		If:          c.If,
 		Set:         deepcopy.Slice(c.Set),
 		Shopt:       deepcopy.Slice(c.Shopt),
 		Vars:        c.Vars.DeepCopy(),
@@ -53,7 +61,7 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 
 	case yaml.MappingNode:
-		var hasCmd, hasLua, hasTask, hasDefer bool
+		var hasDefer bool
 		var deferBlock *Defer
 
 		for i := 0; i < len(node.Content); i += 2 {
@@ -63,15 +71,12 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			switch keyNode.Value {
 			case "cmd":
 				c.Cmd = valNode.Value
-				hasCmd = true
 			case "lua":
 				c.Lua = valNode.Value
-				hasLua = true
 			case "task":
 				c.Task = valNode.Value
-				hasTask = true
-			case "if":
-				c.If = valNode.Value
+			case "for", "if":
+				return unsupportedControlField(keyNode, keyNode.Value)
 			case "ignore_error":
 				_ = valNode.Decode(&c.IgnoreError)
 			case "set":
@@ -80,18 +85,21 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 				_ = valNode.Decode(&c.Shopt)
 			case "vars":
 				_ = valNode.Decode(&c.Vars)
-			case "for":
-				_ = valNode.Decode(&c.For)
 			case "platforms":
 				_ = valNode.Decode(&c.Platforms)
 			case "defer":
-				if err := valNode.Decode(&deferBlock); err == nil {
-					hasDefer = true
+				if err := valNode.Decode(&deferBlock); err != nil {
+					return err
 				}
+				hasDefer = true
 			}
 		}
 
-		if hasLua && hasDefer {
+		if hasMultipleCommandTypes(c.Cmd, c.Task, c.Lua) {
+			return errors.NewTaskfileDecodeError(nil, node).WithMessage(multipleCommandTypesMessage)
+		}
+
+		if c.Lua != "" && hasDefer {
 			return errors.NewTaskfileDecodeError(nil, node).WithMessage("Lua commands cannot be deferred")
 		}
 
@@ -110,24 +118,7 @@ func (c *Cmd) UnmarshalYAML(node *yaml.Node) error {
 			return nil
 		}
 
-		if hasLua && (hasCmd || hasTask) {
-			return errors.NewTaskfileDecodeError(nil, node).WithMessage("command cannot have more than one of lua, cmd, or task")
-		}
-
-		// Handle explicit task calls
-		if hasTask && c.Task != "" {
-			return nil
-		}
-
-		if hasLua {
-			if c.Lua == "" {
-				return errors.NewTaskfileDecodeError(nil, node).WithMessage("Lua script cannot be empty")
-			}
-			return nil
-		}
-
-		// Handle raw commands with custom configuration options
-		if hasCmd && c.Cmd != "" {
+		if c.Task != "" || c.Lua != "" || c.Cmd != "" {
 			return nil
 		}
 

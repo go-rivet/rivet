@@ -1,0 +1,44 @@
+# Bare names use the caller's Taskfile; a leading colon selects the root.
+rivet shared:call
+cmp stdout expect.stdout
+
+# Root callers continue to resolve bare names in the root.
+rivet root-call
+stdout '^root$'
+
+-- expect.stdout --
+one
+root
+root-only
+one
+two
+-- Taskfile.yml --
+version: 42
+tasks:
+  helper:
+    cmds: [echo root]
+  root-only:
+    cmds: [echo root-only]
+  root-call:
+    cmds:
+      - lua: rivet.task("helper", {})
+-- one/Taskfile.yml --
+version: 42
+namespace: shared
+tasks:
+  helper:
+    cmds: [echo one]
+  call:
+    cmds:
+      - lua: |
+          rivet.task("helper", {})
+          rivet.task(":helper", {})
+          assert(not pcall(rivet.task, "root-only", {}))
+          rivet.task(":root-only", {})
+          rivet.task("shared:helper", {})
+-- two/Taskfile.yml --
+version: 42
+namespace: shared
+tasks:
+  helper:
+    cmds: [echo two]

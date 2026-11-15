@@ -1,4 +1,4 @@
-# deps at all schema locations
+# Task dependencies and call vars.
 rivet
 stdout 'dep a'
 stdout 'dep b'
@@ -15,10 +15,12 @@ tasks:
       - task: b
         vars:
           V: v1
-      - for: [x, y]
-        task: c
+      - task: c
         vars:
-          I: '{{.ITEM}}'
+          I: x
+      - task: c
+        vars:
+          I: y
   a:
     cmd: echo dep a
   b:

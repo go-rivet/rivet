@@ -1,0 +1,40 @@
+# Unqualified vars use the current namespace, not an unrelated namespace.
+rivet root-check
+cmp stdout expect.root.stdout
+
+rivet ns:check
+cmp stdout expect.ns.stdout
+
+-- expect.root.stdout --
+ctx.vars=global
+-- expect.ns.stdout --
+template=namespace
+ctx.vars=namespace
+ctx.global=namespace
+ctx.ns=namespace
+-- Taskfile.yml --
+version: 42
+vars:
+  RIVET_TEST_VALUE: global
+tasks:
+  root-check:
+    cmds:
+      - lua: print("ctx.vars=" .. ctx.vars.RIVET_TEST_VALUE)
+---
+version: 42
+namespace: ns
+vars:
+  RIVET_TEST_VALUE: namespace
+tasks:
+  check:
+    cmds:
+      - cmd: echo "template={{.RIVET_TEST_VALUE}}"
+      - lua: |
+          print("ctx.vars=" .. ctx.vars.RIVET_TEST_VALUE)
+          print("ctx.global=" .. ctx.global.RIVET_TEST_VALUE)
+          print("ctx.ns=" .. ctx.ns.ns.RIVET_TEST_VALUE)
+---
+version: 42
+namespace: other
+vars:
+  RIVET_TEST_VALUE: other

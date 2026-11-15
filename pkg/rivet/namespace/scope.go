@@ -76,7 +76,9 @@ type Scope struct {
 	Namespace string
 	Special   map[string]any
 	Env       map[string]any
-	Local     map[string]any
+	// RootEnv excludes the task's dotenv so rooted lookups bypass task values.
+	RootEnv map[string]any
+	Local   map[string]any
 
 	// visiting holds the vars being rendered, to detect reference cycles.
 	visiting map[string]bool
@@ -88,14 +90,23 @@ type Scope struct {
 func (s *Scope) Resolve(refs []string) map[string]any {
 	resolved := make(map[string]any, len(refs))
 	for _, ref := range refs {
-		if value, ok := s.lookup(ref); ok {
+		if value, ok := s.ResolveReference(ref); ok {
 			resolved[ref] = value
 		}
 	}
 	return resolved
 }
 
-func (s *Scope) lookup(ref string) (any, bool) {
+// ResolveVariable resolves a variable declared at an exact DAG path.
+func (s *Scope) ResolveVariable(path, name string) (any, bool) {
+	if value, ok := s.DAG.Vars(path).Value(name); ok {
+		return s.render(path, name, value)
+	}
+	return nil, false
+}
+
+// ResolveReference resolves one reference using the same rules as Resolve.
+func (s *Scope) ResolveReference(ref string) (any, bool) {
 	path, name, belowRoot := s.Namespace, ref, true
 	relative := true
 	if i := strings.LastIndex(ref, ast.NamespaceSeparator); i >= 0 {
@@ -117,7 +128,11 @@ func (s *Scope) lookup(ref string) (any, bool) {
 	if value, ok := s.Special[name]; ok {
 		return value, true
 	}
-	value, ok := s.Env[name]
+	env := s.Env
+	if !relative && s.RootEnv != nil {
+		env = s.RootEnv
+	}
+	value, ok := env[name]
 	return value, ok
 }
 
@@ -144,7 +159,7 @@ func (s *Scope) render(path, name string, value any) (any, bool) {
 	}
 	visiting := map[string]bool{key: true}
 	maps.Copy(visiting, s.visiting)
-	node := &Scope{DAG: s.DAG, Namespace: path, Special: s.Special, Env: s.Env, Local: s.Local, visiting: visiting}
+	node := &Scope{DAG: s.DAG, Namespace: path, Special: s.Special, Env: s.Env, RootEnv: s.RootEnv, Local: s.Local, visiting: visiting}
 	cache := &templater.Cache{Vars: ast.NewVars(), Namespaced: node.Resolve}
 	rendered := templater.Replace(text, cache)
 	if cache.Err() != nil {

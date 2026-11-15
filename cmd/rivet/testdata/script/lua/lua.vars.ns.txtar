@@ -1,0 +1,102 @@
+# Namespace vars are in ctx.ns and ctx.vars under qualified names.
+# Global, task, call and environment values are not in ctx.ns.
+env RIVET_TEST_ENV=environment
+rivet start
+
+-- Taskfile.yml --
+version: 42
+vars:
+  RIVET_TEST_GLOBAL: global
+  RIVET_TEST_SHARED: global
+tasks:
+  start:
+    cmds:
+      - task: ns:run
+        vars:
+          RIVET_TEST_CALL: call
+          RIVET_TEST_SHARED: call
+      - task: ns:child:run
+---
+version: 42
+namespace: ns
+vars:
+  RIVET_TEST_NAMESPACE: namespace
+  RIVET_TEST_RESOLVED: "{{.RIVET_TEST_NAMESPACE}}-resolved"
+  RIVET_TEST_SHARED: namespace
+  RIVET_TEST_LIST: [one, two]
+tasks:
+  run:
+    dotenv: [.task.env]
+    vars:
+      RIVET_TEST_TASK: task
+      RIVET_TEST_SHARED: task
+    cmds:
+      - lua: |
+          -- Present in both tables: namespace and nested namespace vars.
+          assert(ctx.vars["ns:RIVET_TEST_NAMESPACE"] == "namespace")
+          assert(ctx.vars["ns:RIVET_TEST_RESOLVED"] == "namespace-resolved")
+          assert(ctx.vars["ns:RIVET_TEST_SHARED"] == "namespace")
+          assert(ctx.vars["ns:RIVET_TEST_LIST"][2] == "two")
+          assert(ctx.vars["ns:child:RIVET_TEST_CHILD"] == "child")
+
+          assert(ctx.ns.ns.RIVET_TEST_NAMESPACE == "namespace")
+          assert(ctx.ns.ns.RIVET_TEST_RESOLVED == "namespace-resolved")
+          assert(ctx.ns.ns.RIVET_TEST_SHARED == "namespace")
+          assert(ctx.ns.ns.RIVET_TEST_LIST[2] == "two")
+          assert(ctx.ns["ns:child"].RIVET_TEST_CHILD == "child")
+
+          assert(ctx.root.RIVET_TEST_GLOBAL == "global")
+          assert(ctx.root.RIVET_TEST_SHARED == "global")
+          assert(ctx.root.RIVET_TEST_NAMESPACE == nil)
+          assert(ctx.root.RIVET_TEST_CHILD == nil)
+
+          assert(ctx.global.RIVET_TEST_GLOBAL == nil)
+          assert(ctx.global.RIVET_TEST_SHARED == "namespace")
+          assert(ctx.global.RIVET_TEST_NAMESPACE == "namespace")
+          assert(ctx.global.RIVET_TEST_CHILD == nil)
+          assert(ctx.global.RIVET_TEST_MERGED == "merged")
+
+          -- Present in ctx.vars, but not in the namespace table.
+          assert(ctx.vars.RIVET_TEST_CALL == "call")
+          assert(ctx.vars.RIVET_TEST_DOTENV == "dotenv")
+          assert(ctx.vars.RIVET_TEST_ENV == "environment")
+          assert(ctx.vars[":RIVET_TEST_GLOBAL"] == "global")
+          assert(ctx.vars.RIVET_TEST_SHARED == "call")
+          assert(ctx.vars.RIVET_TEST_TASK == "task")
+
+          assert(ctx.ns.ns.RIVET_TEST_CALL == nil)
+          assert(ctx.ns.ns.RIVET_TEST_DOTENV == nil)
+          assert(ctx.ns.ns.RIVET_TEST_ENV == nil)
+          assert(ctx.ns.ns.RIVET_TEST_GLOBAL == nil)
+          assert(ctx.ns.ns.RIVET_TEST_TASK == nil)
+          assert(ctx.ns.ns.RIVET_TEST_CHILD == nil)
+          assert(ctx.ns["ns:child"].RIVET_TEST_NAMESPACE == nil)
+          assert(ctx.ns.missing == nil)
+
+          ctx.ns.ns.RIVET_TEST_LIST[2] = "changed"
+          assert(ctx.vars["ns:RIVET_TEST_LIST"][2] == "two")
+      - lua: assert(ctx.ns.ns.RIVET_TEST_LIST[2] == "two")
+---
+version: 42
+namespace: ns
+vars:
+  RIVET_TEST_MERGED: merged
+---
+version: 42
+namespace: ns:child
+vars:
+  RIVET_TEST_CHILD: child
+tasks:
+  run:
+    cmds:
+      - lua: |
+          assert(ctx.root.RIVET_TEST_GLOBAL == "global")
+          assert(ctx.root.RIVET_TEST_SHARED == "global")
+          assert(ctx.root.RIVET_TEST_CHILD == nil)
+          assert(ctx.global.RIVET_TEST_CHILD == "child")
+          assert(ctx.global.RIVET_TEST_GLOBAL == nil)
+          assert(ctx.global.RIVET_TEST_NAMESPACE == nil)
+          assert(ctx.ns["ns:child"].RIVET_TEST_CHILD == "child")
+
+-- .task.env --
+RIVET_TEST_DOTENV=dotenv

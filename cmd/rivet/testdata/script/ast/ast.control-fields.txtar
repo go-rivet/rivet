@@ -1,0 +1,41 @@
+# Version 42 rejects removed control fields with an explicit error.
+! rivet -t task-if.yml
+stdout '"if" is not supported in version 42; use Lua'
+
+! rivet -t command-for.yml
+stdout '"for" is not supported in version 42; use Lua'
+
+! rivet -t dependency-for.yml
+stdout '"for" is not supported in version 42; use Lua'
+
+! rivet -t deferred-if.yml
+stdout '"if" is not supported in version 42; use Lua'
+
+-- task-if.yml --
+version: 42
+tasks:
+  default:
+    if: 'false'
+    cmds: [echo unexpected]
+-- command-for.yml --
+version: 42
+tasks:
+  default:
+    cmds:
+      - for: [one, two]
+        cmd: echo unexpected
+-- dependency-for.yml --
+version: 42
+tasks:
+  default:
+    deps:
+      - for: [one, two]
+        task: other
+-- deferred-if.yml --
+version: 42
+tasks:
+  default:
+    cmds:
+      - defer:
+          cmd: echo unexpected
+          if: 'true'

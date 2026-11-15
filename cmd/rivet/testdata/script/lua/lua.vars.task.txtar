@@ -1,0 +1,96 @@
+# Task dotenv, call and task vars are in ctx.task and ctx.vars.
+# Global, namespace and environment values are not in ctx.task.
+env RIVET_TEST_ENV=environment
+rivet start
+
+-- Taskfile.yml --
+version: 42
+dotenv: [.global.env]
+vars:
+  RIVET_TEST_GLOBAL: global
+  RIVET_TEST_SHARED: global
+tasks:
+  start:
+    cmds:
+      - task: run
+        vars:
+          RIVET_TEST_CALL: call
+          RIVET_TEST_SHARED: call
+  run:
+    dotenv: [.task.env, .second.env]
+    vars:
+      RIVET_TEST_TASK: "{{.RIVET_TEST_CALL}}-resolved"
+      RIVET_TEST_SHARED: task
+    cmds:
+      - lua: |
+          -- Present in both tables: task dotenv, call vars and task vars.
+          assert(ctx.vars.RIVET_TEST_CALL == "call")
+          assert(ctx.vars.RIVET_TEST_DOTENV == "first")
+          assert(ctx.vars.RIVET_TEST_SHARED == "call")
+          assert(ctx.vars.RIVET_TEST_TASK == "call-resolved")
+          
+          assert(ctx.task.RIVET_TEST_CALL == "call")
+          assert(ctx.task.RIVET_TEST_DOTENV == "first")
+          assert(ctx.task.RIVET_TEST_SHARED == "call")
+          assert(ctx.task.RIVET_TEST_TASK == "call-resolved")
+
+          -- Present in ctx.vars, but not in ctx.task.
+          assert(ctx.vars.RIVET_TEST_ENV == "environment")
+          assert(ctx.vars.RIVET_TEST_GLOBAL_ENV == "global-env")
+          assert(ctx.vars.RIVET_TEST_GLOBAL == "global")
+          
+          assert(ctx.task.RIVET_TEST_ENV == nil)
+          assert(ctx.task.RIVET_TEST_GLOBAL_ENV == nil)
+          assert(ctx.task.RIVET_TEST_GLOBAL == nil)
+          assert(ctx.task.TASK == nil)
+
+          ctx.task.RIVET_TEST_SHARED = "changed"
+          assert(ctx.vars.RIVET_TEST_SHARED == "call")
+          rivet.task("ns:called", {
+            RIVET_TEST_CALL = "lua",
+            RIVET_TEST_DOTENV = "call-over-dotenv",
+            RIVET_TEST_SHARED = "call",
+          })
+          rivet.task("empty", {})
+      - lua: assert(ctx.task.RIVET_TEST_SHARED == "call")
+      - task: ns:called
+        vars:
+          RIVET_TEST_CALL: command
+          RIVET_TEST_DOTENV: call-over-dotenv
+          RIVET_TEST_SHARED: call
+  empty:
+    cmds:
+      - lua: assert(type(ctx.task) == "table" and next(ctx.task) == nil)
+---
+version: 42
+namespace: ns
+vars:
+  RIVET_TEST_NAMESPACE: namespace
+tasks:
+  called:
+    dotenv: [.task.env]
+    vars:
+      RIVET_TEST_SHARED: task
+    cmds:
+      - lua: |
+          -- Call vars override both dotenv and task vars.
+          assert(ctx.vars.RIVET_TEST_CALL == ctx.task.RIVET_TEST_CALL)
+          assert(ctx.vars.RIVET_TEST_DOTENV == "call-over-dotenv")
+          assert(ctx.vars.RIVET_TEST_SHARED == "call")
+          
+          assert(ctx.task.RIVET_TEST_CALL == "lua" or ctx.task.RIVET_TEST_CALL == "command")
+          assert(ctx.task.RIVET_TEST_DOTENV == "call-over-dotenv")
+          assert(ctx.task.RIVET_TEST_SHARED == "call")
+
+          assert(ctx.vars.RIVET_TEST_NAMESPACE == "namespace")
+          assert(ctx.task.RIVET_TEST_NAMESPACE == nil)
+
+-- .global.env --
+RIVET_TEST_GLOBAL_ENV=global-env
+
+-- .task.env --
+RIVET_TEST_DOTENV=first
+RIVET_TEST_SHARED=dotenv
+
+-- .second.env --
+RIVET_TEST_DOTENV=second

@@ -98,7 +98,6 @@ func taskToRuntime(t *Task) *ast.Task {
 		IgnoreError:          t.IgnoreError,
 		Run:                  t.Run,
 		Platforms:            mapSlice(t.Platforms, platformToRuntime),
-		If:                   t.If,
 		Watch:                t.Watch,
 		Location:             locationToRuntime(t.Location),
 		Failfast:             t.Failfast,
@@ -117,8 +116,6 @@ func cmdToRuntime(c *Cmd) *ast.Cmd {
 		Cmd:         c.Cmd,
 		Lua:         c.Lua,
 		Task:        c.Task,
-		For:         forToRuntime(c.For),
-		If:          c.If,
 		Set:         c.Set,
 		Shopt:       c.Shopt,
 		Vars:        varsToRuntime(c.Vars),
@@ -132,25 +129,7 @@ func depToRuntime(d *Dep) *ast.Dep {
 	if d == nil {
 		return nil
 	}
-	return &ast.Dep{Task: d.Task, Cmd: d.Cmd, For: forToRuntime(d.For), Vars: varsToRuntime(d.Vars)}
-}
-
-func forToRuntime(f *For) *ast.For {
-	if f == nil {
-		return nil
-	}
-	out := &ast.For{From: f.From, List: f.List, Var: f.Var, Split: f.Split, As: f.As}
-	if f.Matrix != nil {
-		out.Matrix = ast.NewMatrix()
-		for k, row := range f.Matrix.All() {
-			var r *ast.MatrixRow
-			if row != nil {
-				r = &ast.MatrixRow{Ref: row.Ref, Value: row.Value}
-			}
-			out.Matrix.Set(k, r)
-		}
-	}
-	return out
+	return &ast.Dep{Task: d.Task, Cmd: d.Cmd, Vars: varsToRuntime(d.Vars)}
 }
 
 func requiresToRuntime(r *Requires) *ast.Requires {

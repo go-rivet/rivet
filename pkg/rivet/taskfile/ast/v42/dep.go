@@ -10,7 +10,6 @@ import (
 type Dep struct {
 	Task string
 	Cmd  string
-	For  *For
 	Vars *Vars
 }
 
@@ -21,7 +20,6 @@ func (d *Dep) DeepCopy() *Dep {
 	return &Dep{
 		Task: d.Task,
 		Cmd:  d.Cmd,
-		For:  d.For.DeepCopy(),
 		Vars: d.Vars.DeepCopy(),
 	}
 }
@@ -50,10 +48,8 @@ func (d *Dep) set(key string, val *yaml.Node) error {
 		d.Task = val.Value
 	case "cmd":
 		d.Cmd = val.Value
-	case "for":
-		if err := val.Decode(&d.For); err != nil {
-			return errors.NewTaskfileDecodeError(err, val)
-		}
+	case "for", "if":
+		return unsupportedControlField(val, key)
 	case "vars":
 		if err := val.Decode(&d.Vars); err != nil {
 			return errors.NewTaskfileDecodeError(err, val)

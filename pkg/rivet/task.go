@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
 	"slices"
@@ -26,6 +27,7 @@ import (
 	"github.com/go-rivet/rivet/internal/summary"
 	"github.com/go-rivet/rivet/internal/templater"
 	"github.com/go-rivet/rivet/pkg/rivet/errors"
+	"github.com/go-rivet/rivet/pkg/rivet/namespace"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 	"github.com/go-rivet/rivet/pkg/rlog"
 )
@@ -230,13 +232,18 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 	if err != nil {
 		return err
 	}
+	shellVars, err := e.shellVars(ctx, t, call)
+	if err != nil {
+		return err
+	}
+	taskEnv := env.GetFromVars(shellVars)
 
 	// Check if condition after CompiledTask so dynamic variables are resolved
 	if strings.TrimSpace(t.If) != "" {
 		if err := execext.RunCommand(ctx, &execext.RunCommandOptions{
 			Command: t.If,
 			Dir:     t.Dir,
-			Env:     env.GetFromVars(t.Vars),
+			Env:     taskEnv,
 		}); err != nil {
 			rlog.Debugf(ctx, "task: if condition not met - skipped: %q\n", call.Task)
 			return nil
@@ -282,7 +289,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 		}()
 
 		if len(t.Deps) > 0 {
-			if err := e.runDeps(ctx, t, call); err != nil {
+			if err := e.runDeps(ctx, t, call, taskEnv); err != nil {
 				return err
 			}
 			if changed, err := call.TaskDotenv.Load(t.Dir, nil, nil); err != nil {
@@ -293,6 +300,11 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 				if err != nil {
 					return err
 				}
+				shellVars, err = e.shellVars(ctx, t, call)
+				if err != nil {
+					return err
+				}
+				taskEnv = env.GetFromVars(shellVars)
 			}
 		}
 
@@ -302,7 +314,9 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 				return err
 			}
 
-			preCondMet, err := e.areTaskPreconditionsMet(ctx, t)
+			shellTask := *t
+			shellTask.Vars = shellVars
+			preCondMet, err := e.areTaskPreconditionsMet(ctx, &shellTask)
 			if err != nil {
 				return err
 			}
@@ -316,7 +330,7 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 				len(t.Preconditions) == 0 && strings.TrimSpace(t.If) == "" {
 				fingerprintOptions = append(fingerprintOptions, fingerprint.WithTimestampSourceSnapshot(timestampCache.snapshot))
 			}
-			upToDate, err := fingerprint.IsTaskUpToDate(ctx, t, fingerprintOptions...)
+			upToDate, err := fingerprint.IsTaskUpToDate(ctx, &shellTask, fingerprintOptions...)
 			if err != nil {
 				return err
 			}
@@ -344,11 +358,6 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 		}
 
 		var deferredExitCode uint8
-
-		// t.Vars is fixed for the lifetime of this task run, so the shell env
-		// built from it is identical for every cmd; build it once instead of
-		// per-cmd.
-		taskEnv := env.GetFromVars(t.Vars)
 
 		for i := range t.Cmds {
 			if t.Cmds[i].Defer {
@@ -399,7 +408,7 @@ func (e *Executor) mkdir(t *ast.Task) error {
 	return nil
 }
 
-func (e *Executor) runDeps(ctx context.Context, t *ast.Task, call *Call) error {
+func (e *Executor) runDeps(ctx context.Context, t *ast.Task, call *Call, taskEnv []string) error {
 	g := &errgroup.Group{}
 	if e.Failfast || t.Failfast {
 		g, ctx = errgroup.WithContext(ctx)
@@ -407,8 +416,6 @@ func (e *Executor) runDeps(ctx context.Context, t *ast.Task, call *Call) error {
 
 	reacquire := e.releaseConcurrencyLimit()
 	defer reacquire()
-
-	taskEnv := env.GetFromVars(t.Vars)
 
 	for _, d := range t.Deps {
 		g.Go(func() error {
@@ -499,10 +506,32 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 			return fmt.Errorf("task: failed to get variables: %w", err)
 		}
 		luaVars := vars.ToCacheMap()
+		luaCtx := map[string]any{}
 		if e.TaskfileDAG != nil {
-			luaVars, err = e.v42LuaVars(t, call, vars)
+			var scopes map[string]any
+			luaVars, scopes, err = e.v42LuaVars(t, call, vars)
 			if err != nil {
 				return fmt.Errorf("task: failed to get Lua variables: %w", err)
+			}
+			maps.Copy(luaCtx, scopes)
+		}
+		if t.Transform != nil {
+			sources, err := globMatches(t.Dir, t.Transform.Matches)
+			if err != nil {
+				return fmt.Errorf("task: failed to resolve sources: %w", err)
+			}
+			generates, err := globYields(t.Dir, t.Transform.Yields)
+			if err != nil {
+				return fmt.Errorf("task: failed to resolve generates: %w", err)
+			}
+			luaCtx["sources"] = asAnySlice(sources)
+			luaCtx["generates"] = asAnySlice(generates)
+			if t.Transform.Subst != "" {
+				pairs, err := transformPairs(t.Dir, t.Transform, t.Location)
+				if err != nil {
+					return fmt.Errorf("task: failed to resolve transform: %w", err)
+				}
+				luaCtx["transform"] = asAnySlice(pairs)
 			}
 		}
 		outputWrapper := e.Output
@@ -510,12 +539,41 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 			outputWrapper = output.Passthrough{}
 		}
 		cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars)}
-		stdOut, _, closer := outputWrapper.WrapWriter(e.Stdout, e.Stderr, t.Prefix, cache)
+		stdOut, stdErr, closer := outputWrapper.WrapWriter(e.Stdout, e.Stderr, t.Prefix, cache)
 		rlog.Infof(ctx, "task: [%s] running Lua script\n", t.Name())
 		err = luascript.Run(ctx, &luascript.Options{
 			Script: cmd.Lua,
 			Vars:   luaVars,
+			Ctx:    luaCtx,
 			Stdout: stdOut,
+			TaskRunner: func(callCtx context.Context, taskName string, taskVars map[string]any) error {
+				callVars := ast.NewVarsWithCapacity(len(taskVars))
+				for k, v := range taskVars {
+					callVars.Set(k, ast.Var{Value: v})
+				}
+				taskfile := ""
+				if e.TaskfileDAG != nil {
+					taskfile = taskfileLocation(t)
+					if t.Namespace != "" {
+						taskName = namespace.QualifyTaskReference(taskName, t.Namespace)
+					}
+				}
+				reacquire := e.releaseConcurrencyLimit()
+				defer reacquire()
+				return e.RunTask(callCtx, &Call{Task: taskName, Vars: callVars, Kind: CallKindDirect, Taskfile: taskfile})
+			},
+			CmdRunner: func(cmdCtx context.Context, cmdStr string) error {
+				return execext.RunCommand(cmdCtx, &execext.RunCommandOptions{
+					Command:   cmdStr,
+					Dir:       t.Dir,
+					Env:       taskEnv,
+					PosixOpts: slicesext.UniqueJoin(e.Taskfile.Set, t.Set),
+					BashOpts:  slicesext.UniqueJoin(e.Taskfile.Shopt, t.Shopt),
+					Stdin:     e.Stdin,
+					Stdout:    stdOut,
+					Stderr:    stdErr,
+				})
+			},
 		})
 		if closeErr := closer(err); closeErr != nil {
 			rlog.Errorf(ctx, "task: unable to close Lua output writer: %v\n", closeErr)

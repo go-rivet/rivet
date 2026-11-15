@@ -12,6 +12,8 @@ package luascript
 
 void rivet_lua_register_loggers(lua_State *state, uint64_t context_id);
 void rivet_lua_register_funcs(lua_State *state);
+void rivet_lua_register_task(lua_State *state, uint64_t context_id);
+void rivet_lua_register_cmd(lua_State *state, uint64_t context_id);
 void rivet_lua_set_context(lua_State *state, uint64_t context_id);
 int goLuaPrint(uint64_t context_id, char *message, size_t length);
 int goLuaLog(uint64_t context_id, int level, char *message, size_t length);
@@ -19,6 +21,17 @@ int goLuaLog(uint64_t context_id, int level, char *message, size_t length);
 static void rivet_lua_set_vars(lua_State *state) {
 	lua_setfield(state, -2, "vars");
 	lua_setglobal(state, "ctx");
+}
+
+static void rivet_lua_push_string(lua_State *state, const char *text, size_t length) {
+	lua_pushlstring(state, text ? text : "", length);
+}
+
+static void rivet_lua_set_string(lua_State *state, const char *key, size_t key_length,
+		const char *value, size_t value_length) {
+	rivet_lua_push_string(state, key, key_length);
+	rivet_lua_push_string(state, value, value_length);
+	lua_settable(state, -3);
 }
 */
 import "C"
@@ -54,8 +67,10 @@ var (
 )
 
 type runContext struct {
-	ctx    context.Context
-	stdout io.Writer
+	ctx        context.Context
+	stdout     io.Writer
+	taskRunner TaskRunner
+	cmdRunner  CmdRunner
 }
 
 // Run starts a fresh Lua state and makes a snapshot of vars available as ctx.vars.
@@ -89,13 +104,19 @@ func Run(ctx context.Context, opts *Options) (runErr error) {
 		stdout = os.Stdout
 	}
 	id := logContextID.Add(1)
-	logContexts.Store(id, runContext{ctx: ctx, stdout: stdout})
+	logContexts.Store(id, runContext{ctx: ctx, stdout: stdout, taskRunner: opts.TaskRunner, cmdRunner: opts.CmdRunner})
 	defer logContexts.Delete(id)
 
 	return state.WithState(func(statePtr unsafe.Pointer) error {
 		L := (*C.lua_State)(statePtr)
 		C.rivet_lua_register_loggers(L, C.uint64_t(id))
 		C.rivet_lua_register_funcs(L)
+		if opts.TaskRunner != nil {
+			C.rivet_lua_register_task(L, C.uint64_t(id))
+		}
+		if opts.CmdRunner != nil {
+			C.rivet_lua_register_cmd(L, C.uint64_t(id))
+		}
 		C.rivet_lua_set_context(L, C.uint64_t(id))
 
 		names := make([]string, 0, len(opts.Vars))
@@ -106,6 +127,10 @@ func Run(ctx context.Context, opts *Options) (runErr error) {
 		C.lua_createtable(L, 0, 1)
 		C.lua_createtable(L, 0, C.int(len(names)))
 		for _, name := range names {
+			if value, ok := opts.Vars[name].(string); ok {
+				setString(L, name, value)
+				continue
+			}
 			cName := C.CString(name)
 			C.lua_pushlstring(L, cName, C.size_t(len(name)))
 			C.free(unsafe.Pointer(cName))
@@ -115,6 +140,38 @@ func Run(ctx context.Context, opts *Options) (runErr error) {
 			C.lua_settable(L, -3)
 		}
 		C.rivet_lua_set_vars(L)
+
+		for field, value := range opts.Ctx {
+			cCtx := C.CString("ctx")
+			C.lua_getglobal(L, cCtx)
+			C.free(unsafe.Pointer(cCtx))
+			if err := pushValue(L, reflect.ValueOf(value), 0); err != nil {
+				return fmt.Errorf("lua: setting ctx.%s: %w", field, err)
+			}
+			cField := C.CString(field)
+			C.lua_setfield(L, -2, cField)
+			C.free(unsafe.Pointer(cField))
+			C.lua_settop(L, -2)
+		}
+
+		// Also create a mutable 'vars' global - a separate copy of the variables
+		C.lua_createtable(L, 0, C.int(len(names)))
+		for _, name := range names {
+			if value, ok := opts.Vars[name].(string); ok {
+				setString(L, name, value)
+				continue
+			}
+			cName := C.CString(name)
+			C.lua_pushlstring(L, cName, C.size_t(len(name)))
+			C.free(unsafe.Pointer(cName))
+			if err := pushValue(L, reflect.ValueOf(opts.Vars[name]), 0); err != nil {
+				return fmt.Errorf("lua: setting variable %q (vars): %w", name, err)
+			}
+			C.lua_settable(L, -3)
+		}
+		cVars := C.CString("vars")
+		C.lua_setglobal(L, cVars)
+		C.free(unsafe.Pointer(cVars))
 
 		source := C.CBytes([]byte(opts.Script))
 		defer C.free(source)
@@ -162,10 +219,7 @@ func pushValue(L *C.lua_State, value reflect.Value, depth int) error {
 	case reflect.Bool:
 		C.lua_pushboolean(L, cbool(value.Bool()))
 	case reflect.String:
-		text := value.String()
-		cText := C.CString(text)
-		C.lua_pushlstring(L, cText, C.size_t(len(text)))
-		C.free(unsafe.Pointer(cText))
+		pushString(L, value.String())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		C.lua_pushinteger(L, C.lua_Integer(value.Int()))
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
@@ -208,6 +262,17 @@ func pushValue(L *C.lua_State, value reflect.Value, depth int) error {
 		return fmt.Errorf("unsupported value type %s", value.Type())
 	}
 	return nil
+}
+
+// Lua copies the string data during the call.
+func pushString(L *C.lua_State, text string) {
+	C.rivet_lua_push_string(L, (*C.char)(unsafe.Pointer(unsafe.StringData(text))), C.size_t(len(text)))
+}
+
+func setString(L *C.lua_State, key, value string) {
+	C.rivet_lua_set_string(L,
+		(*C.char)(unsafe.Pointer(unsafe.StringData(key))), C.size_t(len(key)),
+		(*C.char)(unsafe.Pointer(unsafe.StringData(value))), C.size_t(len(value)))
 }
 
 func cbool(value bool) C.int {

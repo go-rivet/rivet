@@ -64,7 +64,7 @@ func init() {
 // Cache is a help struct that allow us to call "replaceX" funcs multiple
 // times, without having to check for error each time. The first error that
 // happen will be assigned to r.err, and consecutive calls to funcs will just
-// return the zero value.
+// return the zero value. A Cache must not be used concurrently.
 type Cache struct {
 	Vars *ast.Vars
 	// Namespaced, when set, resolves namespaced var references on demand.

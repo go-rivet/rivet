@@ -6,6 +6,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 )
 
@@ -32,4 +33,9 @@ func validateNamespace(namespace string) error {
 		}
 	}
 	return nil
+}
+
+func unsupportedControlField(node *yaml.Node, field string) error {
+	return errors.NewTaskfileDecodeError(nil, node).
+		WithMessage("%q is not supported in version 42; use Lua", field)
 }

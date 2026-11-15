@@ -1,0 +1,185 @@
+# Test 1: Access current scope with dot notation (ctx.vars.FOO)
+rivet test-current-scope
+cmp stdout expect.current-scope.stdout
+
+# Test 2: Access global scope via string key (ctx.vars[":FOO"])
+rivet test-global-string-key
+cmp stdout expect.global-string-key.stdout
+
+# Test 3: Access global scope via structure (ctx.global.FOO)
+rivet test-global-structure
+cmp stdout expect.global-structure.stdout
+
+# Test 4: Access namespace via string key (ctx.vars["build:TOOL"])
+rivet test-namespace-string-key
+cmp stdout expect.namespace-string-key.stdout
+
+# Test 5: Access namespace via structure (ctx.ns.build.TOOL)
+rivet test-namespace-structure
+cmp stdout expect.namespace-structure.stdout
+
+# Test 6: Task calling - root task
+rivet test-call-root-task
+cmp stdout expect.call-root-task.stdout
+
+# Test 7: Task calling - namespaced task
+rivet test-call-namespaced-task
+cmp stdout expect.call-namespaced-task.stdout
+
+# Test 8: Task calling with namespace vars
+rivet test-task-with-namespace-vars
+cmp stdout expect.task-with-namespace-vars.stdout
+
+# Test 9: Cmd calling with namespace vars
+rivet test-cmd-with-namespace-vars
+cmp stdout expect.cmd-with-namespace-vars.stdout
+
+# Test 10: Error handling for non-existent namespace
+! rivet test-nonexistent-namespace
+stderr 'attempt to index a nil value'
+
+-- expect.current-scope.stdout --
+FOO from ctx.vars.FOO = task_foo
+FOO from ctx.vars with dot = task_foo
+-- expect.global-string-key.stdout --
+FOO from ctx.vars[":FOO"] = global_foo
+FOO from ctx.vars["FOO"] for comparison = task_foo
+-- expect.global-structure.stdout --
+FOO from ctx.global.FOO = global_foo
+Other var = other_global
+-- expect.namespace-string-key.stdout --
+From ctx.vars["build:TOOL"] = cmake
+From ctx.vars["build:VERSION"] = 3.20
+From ctx.vars["deploy:HOST"] = prod.example.com
+From ctx.vars["deploy:PORT"] = 443
+-- expect.namespace-structure.stdout --
+From ctx.ns.build.TOOL = cmake
+From ctx.ns.build.VERSION = 3.20
+From ctx.ns.deploy.HOST = prod.example.com
+From ctx.ns.deploy.PORT = 443
+-- expect.call-root-task.stdout --
+Calling root task 'helper'
+Hello from root task
+Back in test-call-root-task
+-- expect.call-namespaced-task.stdout --
+Calling namespaced task 'build:helper'
+Tool is cmake
+Back in test-call-namespaced-task
+-- expect.task-with-namespace-vars.stdout --
+Called task1
+In task1, received namespace VAR = from_global
+Building with tool = cmake at version = 3.20
+Deploying to prod.example.com:443
+-- expect.cmd-with-namespace-vars.stdout --
+Using cmake v3.20
+Deploying to prod.example.com on port 443
+-- Taskfile.yml --
+version: 42
+vars:
+  FOO: global_foo
+  OTHER: other_global
+
+tasks:
+  test-current-scope:
+    vars:
+      FOO: task_foo
+    cmds:
+      - lua: |
+          print("FOO from ctx.vars.FOO = " .. ctx.vars.FOO)
+          print("FOO from ctx.vars with dot = " .. ctx.vars["FOO"])
+
+  test-global-string-key:
+    vars:
+      FOO: task_foo
+    cmds:
+      - lua: |
+          print("FOO from ctx.vars[\":FOO\"] = " .. ctx.vars[":FOO"])
+          print("FOO from ctx.vars[\"FOO\"] for comparison = " .. ctx.vars.FOO)
+
+  test-global-structure:
+    cmds:
+      - lua: |
+          print("FOO from ctx.global.FOO = " .. ctx.global.FOO)
+          print("Other var = " .. ctx.global.OTHER)
+
+  test-namespace-string-key:
+    cmds:
+      - lua: |
+          print("From ctx.vars[\"build:TOOL\"] = " .. ctx.vars["build:TOOL"])
+          print("From ctx.vars[\"build:VERSION\"] = " .. ctx.vars["build:VERSION"])
+          print("From ctx.vars[\"deploy:HOST\"] = " .. ctx.vars["deploy:HOST"])
+          print("From ctx.vars[\"deploy:PORT\"] = " .. ctx.vars["deploy:PORT"])
+
+  test-namespace-structure:
+    cmds:
+      - lua: |
+          print("From ctx.ns.build.TOOL = " .. ctx.ns.build.TOOL)
+          print("From ctx.ns.build.VERSION = " .. ctx.ns.build.VERSION)
+          print("From ctx.ns.deploy.HOST = " .. ctx.ns.deploy.HOST)
+          print("From ctx.ns.deploy.PORT = " .. ctx.ns.deploy.PORT)
+
+  test-call-root-task:
+    cmds:
+      - lua: |
+          print("Calling root task 'helper'")
+          rivet.task("helper", {})
+          print("Back in test-call-root-task")
+
+  test-call-namespaced-task:
+    cmds:
+      - lua: |
+          print("Calling namespaced task 'build:helper'")
+          rivet.task("build:helper", {})
+          print("Back in test-call-namespaced-task")
+
+  test-task-with-namespace-vars:
+    cmds:
+      - lua: |
+          print("Called task1")
+          rivet.task("task1", {})
+          print("Building with tool = " .. ctx.ns.build.TOOL .. " at version = " .. ctx.ns.build.VERSION)
+          print("Deploying to " .. ctx.ns.deploy.HOST .. ":" .. ctx.ns.deploy.PORT)
+
+  helper:
+    cmds:
+      - lua: |
+          print("Hello from root task")
+
+  task1:
+    vars:
+      VAR: from_global
+    cmds:
+      - lua: |
+          print("In task1, received namespace VAR = " .. ctx.vars.VAR)
+
+  test-cmd-with-namespace-vars:
+    cmds:
+      - lua: |
+          rivet.cmd("echo Using " .. ctx.ns.build.TOOL .. " v" .. ctx.ns.build.VERSION)
+          rivet.cmd("echo Deploying to " .. ctx.ns.deploy.HOST .. " on port " .. ctx.ns.deploy.PORT)
+
+  test-nonexistent-namespace:
+    cmds:
+      - lua: |
+          -- This should fail because nonexistent namespace doesn't exist
+          print(ctx.ns.nonexistent.SOMEVAR)
+
+-- build/Taskfile.yml --
+version: 42
+namespace: build
+vars:
+  TOOL: cmake
+  VERSION: "3.20"
+
+tasks:
+  helper:
+    cmds:
+      - lua: |
+          print("Tool is " .. ctx.vars.TOOL)
+
+-- deploy/Taskfile.yml --
+version: 42
+namespace: deploy
+vars:
+  HOST: prod.example.com
+  PORT: "443"

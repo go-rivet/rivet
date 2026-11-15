@@ -2,6 +2,7 @@ package namespace
 
 import (
 	"fmt"
+	"iter"
 	"sort"
 	"strings"
 
@@ -13,7 +14,8 @@ import (
 // DAG stores Taskfiles at colon-delimited namespace paths.
 type DAG struct {
 	graph.Graph[string, *Vertex]
-	vertices map[string]*Vertex
+	vertices  map[string]*Vertex
+	taskfiles []*ast.Taskfile
 	// tasks maps a qualified task name to every Taskfile task defined under it,
 	// in the order the Taskfiles were added.
 	tasks map[string][]*TaskEntry
@@ -91,6 +93,7 @@ func (dag *DAG) AddTaskfile(taskfile *ast.Taskfile) error {
 		parent = vertex
 	}
 	parent.Taskfiles = append(parent.Taskfiles, taskfile)
+	dag.taskfiles = append(dag.taskfiles, taskfile)
 	if parent.Vars == nil {
 		parent.Vars = Vars{}
 	}
@@ -101,6 +104,17 @@ func (dag *DAG) AddTaskfile(taskfile *ast.Taskfile) error {
 		}
 	}
 	return nil
+}
+
+// TaskfilesInOrder yields Taskfiles in the order they were added to the DAG.
+func (dag *DAG) TaskfilesInOrder() iter.Seq[*ast.Taskfile] {
+	return func(yield func(*ast.Taskfile) bool) {
+		for _, taskfile := range dag.taskfiles {
+			if !yield(taskfile) {
+				return
+			}
+		}
+	}
 }
 
 // Taskfiles returns the Taskfiles stored at path in the order they were added.
@@ -187,12 +201,12 @@ func QualifyTaskNames(taskfile *ast.Taskfile) {
 		}
 		for _, dependency := range task.Deps {
 			if dependency != nil && dependency.Task != "" {
-				dependency.Task = qualifyTaskReference(dependency.Task, taskfile.Namespace)
+				dependency.Task = QualifyTaskReference(dependency.Task, taskfile.Namespace)
 			}
 		}
 		for _, command := range task.Cmds {
 			if command != nil && command.Task != "" {
-				command.Task = qualifyTaskReference(command.Task, taskfile.Namespace)
+				command.Task = QualifyTaskReference(command.Task, taskfile.Namespace)
 			}
 		}
 		for i, alias := range task.Aliases {
@@ -223,7 +237,8 @@ func qualifyTaskName(name string, namespace string) string {
 	return namespace + ast.NamespaceSeparator + name
 }
 
-func qualifyTaskReference(name string, namespace string) string {
+// QualifyTaskReference resolves a task reference from a non-root namespace.
+func QualifyTaskReference(name string, namespace string) string {
 	if rootName, ok := strings.CutPrefix(name, ast.NamespaceSeparator); ok {
 		return ast.NamespaceSeparator + rootName
 	}

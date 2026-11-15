@@ -36,7 +36,6 @@ type Task struct {
 	IgnoreError   bool
 	Run           string
 	Platforms     []*Platform
-	If            string
 	Watch         bool
 	Location      *Location
 	Failfast      bool
@@ -131,8 +130,8 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 				t.Summary = valNode.Value
 			case "dir":
 				t.Dir = valNode.Value
-			case "if":
-				t.If = valNode.Value
+			case "for", "if":
+				return unsupportedControlField(keyNode, keyNode.Value)
 			case "run":
 				t.Run = valNode.Value
 			case "prefix":
@@ -178,15 +177,17 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 			case "generates":
 				_ = valNode.Decode(&generates)
 			case "cmds":
-				if err := valNode.Decode(&t.Cmds); err == nil {
-					hasCmds = true
+				if err := valNode.Decode(&t.Cmds); err != nil {
+					return err
 				}
+				hasCmds = true
 			case "cmd":
 				var cmd Cmd
-				if err := valNode.Decode(&cmd); err == nil {
-					singleCmd = &cmd
-					hasCmd = true
+				if err := valNode.Decode(&cmd); err != nil {
+					return err
 				}
+				singleCmd = &cmd
+				hasCmd = true
 			}
 		}
 
@@ -240,7 +241,6 @@ func (t *Task) DeepCopy() *Task {
 		IncludeVars:          t.IncludeVars.DeepCopy(),
 		IncludedTaskfileVars: t.IncludedTaskfileVars.DeepCopy(),
 		Platforms:            deepcopy.Slice(t.Platforms),
-		If:                   t.If,
 		Location:             t.Location.DeepCopy(),
 		Requires:             t.Requires.DeepCopy(),
 		Namespace:            t.Namespace,

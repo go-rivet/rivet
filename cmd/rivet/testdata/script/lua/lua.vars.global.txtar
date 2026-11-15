@@ -1,0 +1,134 @@
+# Root vars are in ctx.root and ctx.vars under rooted names.
+# ctx.global contains the current Taskfile's globals.
+env RIVET_TEST_ENV=environment RIVET_TEST_ENV_ONLY=environment-only RIVET_TEST_SHARED=environment
+rivet start RIVET_TEST_CLI=cli RIVET_TEST_SHARED=cli
+cmp stdout expect.stdout
+
+! rivet ns:task-env-root
+cmp stderr expect.root-error.stderr
+
+-- expect.stdout --
+template=namespace-env/environment/task-global-env/global-env/ns:run
+-- expect.root-error.stderr --
+task: variable ".:RIVET_TEST_DOTENV" is not defined
+-- Taskfile.yml --
+version: 42
+dotenv: [.global.env]
+vars:
+  RIVET_TEST_GLOBAL: global
+  RIVET_TEST_RESOLVED: "{{.RIVET_TEST_GLOBAL}}-resolved"
+  RIVET_TEST_SHARED: global
+  RIVET_TEST_LIST: [one, two]
+tasks:
+  start:
+    cmds:
+      - lua: |
+          assert(ctx.root.RIVET_TEST_ENV == "environment")
+          assert(ctx.root.RIVET_TEST_GLOBAL_ENV == "global-env")
+          assert(ctx.root.RIVET_TEST_GLOBAL == "global")
+          assert(ctx.root.RIVET_TEST_RESOLVED == "global-resolved")
+          assert(ctx.root.RIVET_TEST_SHARED == "cli")
+          assert(ctx.root.RIVET_TEST_CLI == "cli")
+          assert(ctx.root.RIVET_TEST_LIST[2] == ctx.global.RIVET_TEST_LIST[2])
+          assert(ctx.global.RIVET_TEST_GLOBAL == "global")
+          assert(ctx.global.RIVET_TEST_ENV == "environment")
+          assert(ctx.global.RIVET_TEST_ENV_ONLY == "environment-only")
+          assert(ctx.global.RIVET_TEST_GLOBAL_ENV == "global-env")
+          assert(ctx.global.RIVET_TEST_RESOLVED == "global-resolved")
+          assert(ctx.global.RIVET_TEST_SHARED == "cli")
+          assert(ctx.global.RIVET_TEST_CLI == "cli")
+          assert(ctx.root.RIVET_TEST_NAMESPACE == nil)
+          assert(ctx.root.RIVET_TEST_CALL == nil)
+          ctx.global.RIVET_TEST_LIST[2] = "changed"
+          assert(ctx.root.RIVET_TEST_LIST[2] == "two")
+      - task: ns:run
+        vars:
+          RIVET_TEST_CALL: call
+          RIVET_TEST_SHARED: call
+---
+version: 42
+namespace: ns
+vars:
+  RIVET_TEST_NAMESPACE: namespace
+  RIVET_TEST_ENV: namespace-env
+  RIVET_TEST_SHARED: namespace
+  RIVET_TEST_LIST: [ns-one, ns-two]
+tasks:
+  run:
+    dotenv: [.task.env]
+    vars:
+      RIVET_TEST_TASK: task
+      RIVET_TEST_SHARED: task
+    cmds:
+      - cmd: echo "template={{.RIVET_TEST_ENV}}/{{.:RIVET_TEST_ENV}}/{{.RIVET_TEST_GLOBAL_ENV}}/{{.:RIVET_TEST_GLOBAL_ENV}}/{{.:TASK}}"
+      - lua: |
+          -- Rooted lookup contains environment, dotenv, Taskfile and CLI globals.
+          assert(ctx.vars[":RIVET_TEST_CLI"] == "cli")
+          assert(ctx.vars[":RIVET_TEST_ENV"] == "environment")
+          assert(ctx.vars[":RIVET_TEST_GLOBAL"] == "global")
+          assert(ctx.vars[":RIVET_TEST_GLOBAL_ENV"] == "global-env")
+          assert(ctx.vars[":RIVET_TEST_RESOLVED"] == "global-resolved")
+          assert(ctx.vars[":RIVET_TEST_SHARED"] == "cli")
+          assert(ctx.vars[":RIVET_TEST_LIST"][2] == "two")
+          assert(ctx.vars[":TASK"] == "ns:run")
+
+          assert(ctx.global.RIVET_TEST_ENV == "namespace-env")
+          assert(ctx.global.RIVET_TEST_ENV_ONLY == "environment-only")
+          assert(ctx.global.RIVET_TEST_GLOBAL_ENV == "global-env")
+          assert(ctx.global.RIVET_TEST_NAMESPACE == "namespace")
+          assert(ctx.global.RIVET_TEST_SHARED == "namespace")
+          assert(ctx.global.RIVET_TEST_LIST[2] == "ns-two")
+          assert(ctx.global.RIVET_TEST_CLI == nil)
+          assert(ctx.global.RIVET_TEST_GLOBAL == nil)
+          assert(ctx.global.RIVET_TEST_RESOLVED == nil)
+
+          assert(ctx.root.RIVET_TEST_CLI == "cli")
+          assert(ctx.root.RIVET_TEST_ENV == "environment")
+          assert(ctx.root.RIVET_TEST_GLOBAL == "global")
+          assert(ctx.root.RIVET_TEST_GLOBAL_ENV == "global-env")
+          assert(ctx.root.RIVET_TEST_RESOLVED == "global-resolved")
+          assert(ctx.root.RIVET_TEST_SHARED == "cli")
+          assert(ctx.root.RIVET_TEST_LIST[2] == "two")
+
+          -- Unqualified lookup sees task and namespace values.
+          assert(ctx.vars.RIVET_TEST_CALL == "call")
+          assert(ctx.vars.RIVET_TEST_DOTENV == "dotenv")
+          assert(ctx.vars.RIVET_TEST_ENV == "namespace-env")
+          assert(ctx.vars.RIVET_TEST_GLOBAL_ENV == "task-global-env")
+          assert(ctx.vars.RIVET_TEST_NAMESPACE == "namespace")
+          assert(ctx.vars.RIVET_TEST_SHARED == "call")
+          assert(ctx.vars.RIVET_TEST_TASK == "task")
+
+          assert(ctx.vars[":RIVET_TEST_DOTENV"] == nil)
+
+          assert(ctx.global.RIVET_TEST_CALL == nil)
+          assert(ctx.global.RIVET_TEST_DOTENV == nil)
+          assert(ctx.global.RIVET_TEST_TASK == nil)
+
+          assert(ctx.root.RIVET_TEST_CALL == nil)
+          assert(ctx.root.RIVET_TEST_DOTENV == nil)
+          assert(ctx.root.RIVET_TEST_NAMESPACE == nil)
+          assert(ctx.root.RIVET_TEST_TASK == nil)
+
+          ctx.root.RIVET_TEST_LIST[2] = "root-changed"
+          assert(ctx.global.RIVET_TEST_LIST[2] == "ns-two")
+          assert(ctx.vars[":RIVET_TEST_LIST"][2] == "two")
+          ctx.global.RIVET_TEST_LIST[2] = "changed"
+          assert(ctx.root.RIVET_TEST_LIST[2] == "root-changed")
+          assert(ctx.vars[":RIVET_TEST_LIST"][2] == "two")
+          assert(ctx.ns.ns.RIVET_TEST_LIST[2] == "ns-two")
+      - lua: |
+          assert(ctx.global.RIVET_TEST_LIST[2] == "ns-two")
+          assert(ctx.root.RIVET_TEST_LIST[2] == "two")
+  task-env-root:
+    dotenv: [.task.env]
+    cmds:
+      - cmd: echo "{{.:RIVET_TEST_DOTENV}}"
+
+-- .global.env --
+RIVET_TEST_GLOBAL_ENV=global-env
+RIVET_TEST_SHARED=dotenv
+
+-- .task.env --
+RIVET_TEST_DOTENV=dotenv
+RIVET_TEST_GLOBAL_ENV=task-global-env

@@ -5,7 +5,7 @@
 // Due to how signals work, for robustness we always spawn a separate process;
 // we never send signals to the test process.
 
-package task_test
+package rivet_test
 
 import (
 	"bytes"

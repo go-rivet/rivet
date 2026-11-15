@@ -7,6 +7,14 @@ cmp stdout expect.tvar
 rivet ns:tvar
 cmp stdout expect.ns_tvar
 
+# Call vars override task vars for commands and dependencies.
+rivet default-values
+cmp stdout expect.defaults
+rivet command-values
+cmp stdout expect.command
+rivet dependency-values
+cmp stdout expect.dependency
+
 -- Taskfile.yml --
 ---
 version: 42
@@ -20,6 +28,31 @@ tasks:
     cmds:
       - cmd: echo "foo = {{.FOO}}"
       - cmd: echo "bar = {{.BAR}}"
+  default-values:
+    cmds:
+      - task: values
+  command-values:
+    cmds:
+      - task: values
+        vars:
+          FOO: command
+          EMPTY: ""
+          FLAG: false
+  dependency-values:
+    deps:
+      - task: values
+        vars:
+          FOO: dependency
+          EMPTY: ""
+          FLAG: false
+  values:
+    vars:
+      FOO: default
+      DERIVED: "{{.FOO}}-derived"
+      EMPTY: default
+      FLAG: true
+    cmds:
+      - cmd: echo "foo={{.FOO}} derived={{.DERIVED}} empty=[{{.EMPTY}}] flag={{.FLAG}}"
       
 -- ns/Taskfile.yml --
 ---
@@ -46,3 +79,9 @@ foo = ns_t_foo
 bar = ns_bar
 g_foo = g_foo
 g_bar = g_bar
+-- expect.defaults --
+foo=default derived=default-derived empty=[default] flag=true
+-- expect.command --
+foo=command derived=command-derived empty=[] flag=false
+-- expect.dependency --
+foo=dependency derived=dependency-derived empty=[] flag=false

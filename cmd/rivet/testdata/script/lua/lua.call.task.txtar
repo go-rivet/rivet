@@ -1,0 +1,168 @@
+# Test 1: Basic task calling with variable modification
+rivet call
+cmp stdout expect.call.stdout
+
+# Test 2: Error handling from called tasks
+rivet error-handling
+cmp stdout expect.error.stdout
+
+# Test 3: Nested task calls (task -> lua -> task -> lua -> task)
+rivet nested
+cmp stdout expect.nested.stdout
+
+# Nested calls and caught errors must not deadlock at the concurrency limit.
+rivet --concurrency 1 nested
+cmp stdout expect.nested.stdout
+rivet --concurrency 1 error-handling
+cmp stdout expect.error.stdout
+
+# Test 4: Invalid task name error
+! rivet invalid-task-name
+stderr 'does not exist'
+
+# Test 5: Edge cases with variables
+rivet edge-cases
+cmp stdout expect.edge.stdout
+
+# Test 6: Panic/error propagation from Lua
+! rivet panic-propagation
+stderr 'intentional error'
+
+-- expect.call.stdout --
+FOO before Lua script = g_foo
+FOO in Lua script = g_foo
+FOO from Lua task call = lua_foo
+FOO from Taskfile global = g_foo
+FOO from Lua task call = g_foo
+FOO from Taskfile global = g_foo
+-- expect.error.stdout --
+before calling failing task
+after catching error
+success: task returned error as expected
+task call succeeded with result
+-- expect.nested.stdout --
+level 1: before nested call
+level 2: in nested lua
+level 3: from task
+level 3 result: from_lua_3
+level 1 result: nested_complete
+level 2 result: from_task_2
+-- expect.edge.stdout --
+empty vars table test passed
+large value test passed
+vars with multiple keys test passed
+-- Taskfile.yml --
+version: 42
+vars:
+  FOO: g_foo
+
+tasks:
+  # Test 1: Basic task calling
+  call:
+    cmds:
+      - cmd: echo "FOO before Lua script = {{.FOO}}"
+      - lua: |
+          print("FOO in Lua script = " .. ctx.vars.FOO)
+          vars.FOO = "lua_foo"
+          rivet.task("foo", vars)
+          rivet.task("foo", ctx.vars)
+
+  foo:
+    cmds:
+      - cmd: echo "FOO from Lua task call = {{.FOO}}"
+      - cmd: echo "FOO from Taskfile global = {{.:FOO}}"
+
+  # Test 2: Error handling from called tasks
+  error-handling:
+    cmds:
+      - lua: |
+          print("before calling failing task")
+          local ok, err = pcall(function()
+            rivet.task("failing-task", {})
+          end)
+          if not ok then
+            print("after catching error")
+            print("success: task returned error as expected")
+          end
+          rivet.task("success-task", {STATUS = "completed"})
+
+  failing-task:
+    cmds:
+      - cmd: exit 1
+
+  success-task:
+    cmds:
+      - lua: |
+          print("task call succeeded with result")
+
+  # Test 3: Nested task calls (task -> lua -> task -> lua -> task)
+  nested:
+    cmds:
+      - lua: |
+          print("level 1: before nested call")
+          local result = {}
+          rivet.task("nested-level-2", result)
+
+  nested-level-2:
+    cmds:
+      - lua: |
+          print("level 2: in nested lua")
+          local vars = {LEVEL = "2"}
+          rivet.task("nested-level-3", vars)
+          print("level 2 result: from_task_2")
+
+  nested-level-3:
+    cmds:
+      - lua: |
+          print("level 3: from task")
+          print("level 3 result: from_lua_3")
+      - lua: |
+          print("level 1 result: nested_complete")
+
+  # Test 4: Invalid task name error
+  invalid-task-name:
+    cmds:
+      - lua: |
+          rivet.task("non-existent-task", {})
+
+  # Test 5: Edge cases with variables
+  edge-cases:
+    cmds:
+      - lua: |
+          -- Test empty vars table
+          rivet.task("empty-vars-task", {})
+          
+          -- Test with large value
+          local large_value = string.rep("x", 1000)
+          rivet.task("large-vars-task", {LARGE = large_value})
+          
+          -- Test with multiple keys
+          rivet.task("multi-vars-task", {A = "a", B = "b", C = "c"})
+
+  empty-vars-task:
+    cmds:
+      - lua: print("empty vars table test passed")
+
+  large-vars-task:
+    cmds:
+      - lua: |
+          if ctx.vars.LARGE and string.len(ctx.vars.LARGE) == 1000 then
+            print("large value test passed")
+          end
+
+  multi-vars-task:
+    cmds:
+      - lua: |
+          if ctx.vars.A == "a" and ctx.vars.B == "b" and ctx.vars.C == "c" then
+            print("vars with multiple keys test passed")
+          end
+
+  # Test 6: Panic/error propagation from Lua
+  panic-propagation:
+    cmds:
+      - lua: |
+          rivet.task("error-in-lua-call", {})
+
+  error-in-lua-call:
+    cmds:
+      - lua: error("intentional error from nested task")

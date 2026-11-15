@@ -385,99 +385,27 @@ func itemsFromFor(
 	}
 	// Get the list from the task matches / sources
 	if f.From == "matches" || f.From == "sources" {
-		glist, err := fingerprint.Globs(dir, matches)
+		glist, err := globMatches(dir, matches)
 		if err != nil {
 			return nil, nil, err
-		}
-		// Make the paths relative to the task dir
-		for i, v := range glist {
-			if glist[i], err = filepath.Rel(dir, v); err != nil {
-				return nil, nil, err
-			}
 		}
 		values = asAnySlice(glist)
 	}
-	// Get the list from the task yields / generates
 	if f.From == "yields" || f.From == "generates" {
-		// Yields are outputs of the task and may not exist on disk yet (e.g.
-		// before the task's commands have run). Literal (non-glob) yield
-		// patterns are used as-is instead of being globbed, since globbing
-		// requires the file to already exist. Patterns containing glob
-		// metacharacters are still globbed against the filesystem.
-		var literals []string
-		var globs []*ast.Glob
-		for _, y := range yields {
-			if y.Negate || strings.ContainsAny(y.Glob, "*?[") {
-				globs = append(globs, y)
-			} else {
-				literals = append(literals, y.Glob)
-			}
-		}
-		glist, err := fingerprint.Globs(dir, globs)
+		glist, err := globYields(dir, yields)
 		if err != nil {
 			return nil, nil, err
 		}
-		// Make the paths relative to the task dir
-		for i, v := range glist {
-			if glist[i], err = filepath.Rel(dir, v); err != nil {
-				return nil, nil, err
-			}
-		}
-		glist = append(glist, literals...)
-		sort.Strings(glist)
 		values = asAnySlice(glist)
 	}
 
 	if f.From == "transform" && transform.Subst != "" {
-		parts := strings.SplitN(transform.Subst, ":", 2)
-		if len(parts) != 2 {
-			return nil, nil, errors.TaskfileInvalidError{
-				URI: location.Taskfile,
-				Err: fmt.Errorf("invalid transform subst format '%s' (expected from:to)", transform.Subst),
-			}
-		}
-		fromPattern, toPattern := parts[0], parts[1]
-		wildcardIdx := strings.IndexByte(fromPattern, '%')
-		prefix := fromPattern
-		suffix := ""
-		if wildcardIdx != -1 {
-			prefix = fromPattern[:wildcardIdx]
-			suffix = fromPattern[wildcardIdx+1:]
-		}
-
-		tglob := []*ast.Glob{}
-		matchGlob, _ := transform.SubstToGlob()
-		tglob = append(tglob, matchGlob)
-		glist, err := fingerprint.Globs(dir, tglob)
+		pairs, err := transformPairs(dir, transform, location)
 		if err != nil {
 			return nil, nil, err
 		}
-		for _, v := range glist {
-			relPath, err := filepath.Rel(dir, v)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			// If wildcardIdx was found, validate and extract stem text
-			var yieldPath string
-			if wildcardIdx != -1 {
-				if !strings.HasPrefix(relPath, prefix) || !strings.HasSuffix(relPath, suffix) || len(relPath) < len(prefix)+len(suffix) {
-					continue // Skip files matched by generic globs that don't match our subst rule
-				}
-				stem := relPath[len(prefix) : len(relPath)-len(suffix)]
-				yieldPath = strings.ReplaceAll(toPattern, "%", stem)
-			} else {
-				if relPath != fromPattern {
-					continue
-				}
-				yieldPath = toPattern
-			}
-
-			// Store as a mapping context dictionary
-			values = append(values, map[string]string{
-				"MATCH": relPath,
-				"YIELD": yieldPath,
-			})
+		for _, pair := range pairs {
+			values = append(values, pair)
 		}
 	}
 
@@ -612,4 +540,96 @@ func depCmdExtra(vars *ast.Vars, loop map[string]any) map[string]any {
 		}
 	}
 	return extra
+}
+
+// globMatches returns the files matching globs, relative to dir.
+func globMatches(dir string, globs []*ast.Glob) ([]string, error) {
+	files, err := fingerprint.Globs(dir, globs)
+	if err != nil {
+		return nil, err
+	}
+	for i, file := range files {
+		if files[i], err = filepath.Rel(dir, file); err != nil {
+			return nil, err
+		}
+	}
+	return files, nil
+}
+
+// globYields returns the files for yield globs, relative to dir. Yields are
+// outputs of the task and may not exist on disk yet, so literal (non-glob)
+// patterns are used as-is instead of being globbed.
+func globYields(dir string, yields []*ast.Glob) ([]string, error) {
+	var literals []string
+	var globs []*ast.Glob
+	for _, y := range yields {
+		if y.Negate || strings.ContainsAny(y.Glob, "*?[") {
+			globs = append(globs, y)
+		} else {
+			literals = append(literals, y.Glob)
+		}
+	}
+	files, err := globMatches(dir, globs)
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, literals...)
+	sort.Strings(files)
+	return files, nil
+}
+
+// transformPairs returns the MATCH/YIELD pairs produced by the transform subst rule.
+func transformPairs(dir string, transform *ast.Transform, location *ast.Location) ([]map[string]string, error) {
+	var pairs []map[string]string
+	parts := strings.SplitN(transform.Subst, ":", 2)
+	if len(parts) != 2 {
+		return nil, errors.TaskfileInvalidError{
+			URI: location.Taskfile,
+			Err: fmt.Errorf("invalid transform subst format '%s' (expected from:to)", transform.Subst),
+		}
+	}
+	fromPattern, toPattern := parts[0], parts[1]
+	wildcardIdx := strings.IndexByte(fromPattern, '%')
+	prefix := fromPattern
+	suffix := ""
+	if wildcardIdx != -1 {
+		prefix = fromPattern[:wildcardIdx]
+		suffix = fromPattern[wildcardIdx+1:]
+	}
+
+	tglob := []*ast.Glob{}
+	matchGlob, _ := transform.SubstToGlob()
+	tglob = append(tglob, matchGlob)
+	glist, err := fingerprint.Globs(dir, tglob)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range glist {
+		relPath, err := filepath.Rel(dir, v)
+		if err != nil {
+			return nil, err
+		}
+
+		// If wildcardIdx was found, validate and extract stem text
+		var yieldPath string
+		if wildcardIdx != -1 {
+			if !strings.HasPrefix(relPath, prefix) || !strings.HasSuffix(relPath, suffix) || len(relPath) < len(prefix)+len(suffix) {
+				continue // Skip files matched by generic globs that don't match our subst rule
+			}
+			stem := relPath[len(prefix) : len(relPath)-len(suffix)]
+			yieldPath = strings.ReplaceAll(toPattern, "%", stem)
+		} else {
+			if relPath != fromPattern {
+				continue
+			}
+			yieldPath = toPattern
+		}
+
+		// Store as a mapping context dictionary
+		pairs = append(pairs, map[string]string{
+			"MATCH": relPath,
+			"YIELD": yieldPath,
+		})
+	}
+	return pairs, nil
 }

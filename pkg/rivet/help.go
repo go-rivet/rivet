@@ -154,7 +154,15 @@ func (e *Executor) ToEditorOutput(tasks []*ast.Task, noStatus bool, nested bool)
 			}
 
 			// Get the fingerprinting method to use
-			upToDate, err := fingerprint.IsTaskUpToDate(e.ctx, tasks[i],
+			shellTask := *tasks[i]
+			if len(shellTask.Status) > 0 {
+				var err error
+				shellTask.Vars, err = e.shellVars(e.ctx, &shellTask, &Call{Task: shellTask.Task})
+				if err != nil {
+					return err
+				}
+			}
+			upToDate, err := fingerprint.IsTaskUpToDate(e.ctx, &shellTask,
 				fingerprint.WithTempDir(e.TempDir.Fingerprint),
 				fingerprint.WithDry(e.Dry),
 			)

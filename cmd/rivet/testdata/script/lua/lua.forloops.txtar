@@ -1,0 +1,130 @@
+rivet array
+cmp stdout expect.stdout.array
+
+rivet matrix
+cmp stdout expect.stdout.matrix
+
+rivet sources
+cmp stdout expect.stdout.sources
+
+rivet generates
+cmp stdout expect.stdout.generates
+
+rivet matches
+cmp stdout expect.stdout.matches
+
+rivet transform
+cmp stdout expect.stdout.transform
+
+rivet task
+cmp stdout expect.stdout.task
+
+-- expect.stdout.array --
+Processing item1
+Processing item2
+Processing item3
+-- expect.stdout.matrix --
+Build linux/amd64
+Build linux/arm64
+Build windows/amd64
+Build windows/arm64
+Build darwin/amd64
+Build darwin/arm64
+-- expect.stdout.sources --
+2 bar.txt
+3 foo.txt
+-- expect.stdout.generates --
+3 foo.txt
+-- expect.stdout.matches --
+Item bar.txt
+Item foo.txt
+-- expect.stdout.transform --
+a.old -> a.new
+b.old -> b.new
+space name.old -> space name.new
+-- expect.stdout.task --
+Service frontend
+Service backend
+Service worker
+-- expect.stderr --
+-- a.old --
+a
+-- b.old --
+b
+-- space name.old --
+space
+-- foo.txt --
+foo bar fubar
+-- bar.txt --
+bar fubar
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  array:
+    vars:
+      ITEMS: 'item1,item2,item3'
+    cmds:
+      - lua: |
+          for _, item in ipairs(rivet.fn.split(ctx.vars.ITEMS, ",")) do
+            print("Processing " .. item)
+          end
+  matrix:
+    vars:
+      OS: [linux, windows, darwin]
+      ARCH: [amd64, arm64]
+    cmds:
+      - lua: |
+          for _, os in ipairs(ctx.vars.OS) do
+            for _, arch in ipairs(ctx.vars.ARCH) do
+              rivet.task("build",  {OS = os, ARCH = arch})
+            end
+          end
+  build:
+    cmds:
+      - cmd: echo "Build {{.OS}}/{{.ARCH}}"
+  sources:
+    sources: ['*.txt']
+    cmds:
+      - lua: |
+          for _, file in ipairs(ctx.sources) do
+            rivet.cmd("wc -w " .. file)
+          end
+  generates:
+    generates: ['foo.*']
+    cmds:
+      - lua: |
+          for _, file in ipairs(ctx.generates) do
+            rivet.cmd("wc -w " .. file)
+          end
+  matches:
+    cmds:
+      - lua: |
+          for _, file in ipairs(ctx.sources) do
+            print("Item " .. file)
+          end
+      - cmd: touch fubar.out
+    transform:
+      matches:
+        - foo.txt
+        - bar.txt
+      yields:
+        - fubar.out
+  transform:
+    transform:
+      subst: '%.old:%.new'
+    cmds:
+      - lua: |
+          for _, file in ipairs(ctx.transform) do
+            print(file.MATCH .. " -> " .. file.YIELD)
+            rivet.cmd("cp " .. rivet.fn.shellQuote(file.MATCH) .. " " .. rivet.fn.shellQuote(file.YIELD))
+          end
+  task:
+    cmds:
+      - lua: |
+          for _, service in ipairs({"frontend", "backend", "worker"}) do
+            rivet.task("start", {SERVICE = service})
+          end
+  start:
+    cmds:
+      - cmd: echo "Service {{.SERVICE}}"

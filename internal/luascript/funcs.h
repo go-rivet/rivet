@@ -23,5 +23,7 @@ enum {
 
 void rivet_lua_free_value(rivet_lua_value *value);
 void rivet_lua_register_funcs(lua_State *state);
+void rivet_lua_register_task(lua_State *state, uint64_t context_id);
+void rivet_lua_register_cmd(lua_State *state, uint64_t context_id);
 
 #endif

@@ -69,13 +69,15 @@ func TestGroup(t *testing.T) {
 func TestGroupWithBeginEnd(t *testing.T) {
 	t.Parallel()
 
-	tmpl := templater.Cache{
-		Vars: ast.NewVars(
-			&ast.VarElement{
-				Key:   "VAR1",
-				Value: ast.Var{Value: "example-value"},
-			},
-		),
+	tmpl := func() *templater.Cache {
+		return &templater.Cache{
+			Vars: ast.NewVars(
+				&ast.VarElement{
+					Key:   "VAR1",
+					Value: ast.Var{Value: "example-value"},
+				},
+			),
+		}
 	}
 
 	var o output.Output = output.Group{
@@ -86,7 +88,7 @@ func TestGroupWithBeginEnd(t *testing.T) {
 		t.Parallel()
 
 		var b bytes.Buffer
-		w, _, cleanup := o.WrapWriter(&b, io.Discard, "", &tmpl)
+		w, _, cleanup := o.WrapWriter(&b, io.Discard, "", tmpl())
 
 		_, _ = fmt.Fprintln(w, "foo\nbar")
 		assert.Equal(t, "", b.String())
@@ -99,7 +101,7 @@ func TestGroupWithBeginEnd(t *testing.T) {
 		t.Parallel()
 
 		var b bytes.Buffer
-		_, _, cleanup := o.WrapWriter(&b, io.Discard, "", &tmpl)
+		_, _, cleanup := o.WrapWriter(&b, io.Discard, "", tmpl())
 		require.NoError(t, cleanup(nil))
 		assert.Equal(t, "", b.String())
 	})

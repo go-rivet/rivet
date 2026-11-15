@@ -1,0 +1,27 @@
+# Lua conditionals control task and shell calls.
+rivet check ENABLED=yes
+cmp stdout expect.enabled
+
+rivet check ENABLED=no
+cmp stdout expect.disabled
+
+-- expect.enabled --
+enabled
+called
+-- expect.disabled --
+disabled
+-- Taskfile.yml --
+version: 42
+tasks:
+  check:
+    cmds:
+      - lua: |
+          if ctx.vars.ENABLED == "yes" then
+            rivet.cmd("echo enabled")
+            rivet.task("called", {})
+          else
+            print("disabled")
+          end
+  called:
+    cmds:
+      - cmd: echo called
