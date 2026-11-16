@@ -92,6 +92,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Cache Release Toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/rivet/toolchain
+          key: rivet-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'go.mod', 'go.sum', 'tools/toolchain/Dockerfile') }}
+
       - name: Configure Docker
         uses: douglascamata/setup-docker-macos-action@v1.1.0
         with:
@@ -107,7 +113,7 @@ jobs:
       - name: Run Makefile Release Target
         run: |
           TAG_VERSION=${GITHUB_REF#refs/tags/}
-          VERSION=$TAG_VERSION make release
+          TOOLCHAIN_CACHE_DIR="$HOME/.cache/rivet/toolchain" VERSION=$TAG_VERSION make release
 
       - name: Publish Official GitHub Release
         uses: softprops/action-gh-release@v3
