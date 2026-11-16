@@ -269,6 +269,7 @@ $(addprefix .release/,$(PLATFORMS)):
 	
 	# Linux uses musl and static linking; other targets use Zig's platform toolchain.
 	CC="$(ZIG) cc -target $(ZIG_TARGET) $(if $(filter darwin,$(OS)),-isysroot $(MACOS_SDK_PATH) -L$(MACOS_SDK_PATH)/usr/lib -F$(MACOS_SDK_PATH)/System/Library/Frameworks,)" CGO_ENABLED=1 GOOS=$(OS) GOARCH=$(ARCH) GOARM=$(GOARM_FLAG) GO386=$(GO386_FLAG) go build \
+		-buildvcs=false \
 		-trimpath \
 		-tags "netgo osusergo" \
 		-ldflags "$(LD_FLAGS) $(if $(filter linux,$(OS)),$(LINUX_LD_FLAGS),)" \
