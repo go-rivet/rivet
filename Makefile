@@ -32,7 +32,7 @@ LINUX_LD_FLAGS = -extldflags '-static -s'
 NATIVE_LD_FLAGS = $(LD_FLAGS) $(if $(filter linux,$(shell go env GOOS)),$(LINUX_LD_FLAGS),)
 NATIVE_PLATFORM = $(shell go env GOOS)/$(shell go env GOARCH)
 NATIVE_ZIG_TARGET = $(call zig_target,$(if $(filter linux/arm,$(NATIVE_PLATFORM)),linux/arm/$(shell go env GOARM),$(NATIVE_PLATFORM)))
-NATIVE_SDK_FLAGS = $(if $(filter darwin,$(shell go env GOOS)),-isysroot $(MACOS_SDK_PATH),)
+NATIVE_SDK_FLAGS = $(if $(filter darwin,$(shell go env GOOS)),-isysroot $(MACOS_SDK_PATH) -L$(MACOS_SDK_PATH)/usr/lib,)
 
 # Target OS and Architectures (The GoReleaser matrix equivalent)
 PLATFORMS    = darwin/amd64 \
@@ -268,7 +268,7 @@ $(addprefix .release/,$(PLATFORMS)):
 	$(if $(filter darwin,$(OS)),$(if $(strip $(MACOS_SDK_PATH)),,@echo "A macOS SDK is required for Darwin cgo builds; set MACOS_SDK_PATH or build on macOS." >&2; exit 1),)
 	
 	# Linux uses musl and static linking; other targets use Zig's platform toolchain.
-	CC="$(ZIG) cc -target $(ZIG_TARGET) $(if $(filter darwin,$(OS)),-isysroot $(MACOS_SDK_PATH),)" CGO_ENABLED=1 GOOS=$(OS) GOARCH=$(ARCH) GOARM=$(GOARM_FLAG) GO386=$(GO386_FLAG) go build \
+	CC="$(ZIG) cc -target $(ZIG_TARGET) $(if $(filter darwin,$(OS)),-isysroot $(MACOS_SDK_PATH) -L$(MACOS_SDK_PATH)/usr/lib,)" CGO_ENABLED=1 GOOS=$(OS) GOARCH=$(ARCH) GOARM=$(GOARM_FLAG) GO386=$(GO386_FLAG) go build \
 		-trimpath \
 		-tags "netgo osusergo" \
 		-ldflags "$(LD_FLAGS) $(if $(filter linux,$(OS)),$(LINUX_LD_FLAGS),)" \
