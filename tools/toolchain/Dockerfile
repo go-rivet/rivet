@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Timothy Rule
+# SPDX-License-Identifier: MIT
+
 ARG GO_VERSION=1.26.0
 FROM golang:${GO_VERSION}-bookworm
 

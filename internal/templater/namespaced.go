@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Timothy Rule
+// SPDX-License-Identifier: MIT
+
 package templater
 
 import (

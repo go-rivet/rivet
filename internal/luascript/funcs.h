@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Timothy Rule
+// SPDX-License-Identifier: MIT
+
 #ifndef RIVET_LUA_FUNCS_H
 #define RIVET_LUA_FUNCS_H
 
