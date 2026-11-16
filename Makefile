@@ -275,15 +275,13 @@ $(addprefix .release/,$(PLATFORMS)):
 		-ldflags "$(LD_FLAGS) $(if $(filter linux,$(OS)),$(LINUX_LD_FLAGS),)" \
 		-o $(DIST_DIR)/$(OUT_NAME)$(EXT) $(SRC_DIR)
 	
-	@if [ "$(OS)" != "windows" ]; then chmod +x $(DIST_DIR)/$(OUT_NAME)$(EXT); fi
-	
 	# GoReleaser style packaging
 	@cd $(DIST_DIR) && \
 	if [ "$(OS)" = "windows" ]; then \
 		zip -q $(OUT_NAME).zip $(OUT_NAME)$(EXT); \
 		rm $(OUT_NAME)$(EXT); \
 	else \
-		tar -czf $(OUT_NAME).tar.gz $(OUT_NAME)$(EXT); \
+		tar --mode=a+x -czf $(OUT_NAME).tar.gz $(OUT_NAME)$(EXT); \
 		rm $(OUT_NAME)$(EXT); \
 	fi
 
