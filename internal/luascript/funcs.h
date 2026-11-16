@@ -2,6 +2,7 @@
 #define RIVET_LUA_FUNCS_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include "lua.h"
 
 typedef struct rivet_lua_value {

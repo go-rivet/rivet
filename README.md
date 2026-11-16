@@ -16,9 +16,9 @@ For extensive documentation or community-driven support, please refer to the ups
 
 ## Installation
 
-### Automated Install Script (Linux/Darwin)
+### Automated Install Script (Linux)
 
-You can download and run the installer script, which automatically detects your Operating System, hardware architecture.
+You can download and run the installer script, which automatically detects your operating system and hardware architecture. Current releases do not include macOS binaries; macOS users can build from source.
 
 ```bash
 # Download and install the latest version of Rivet.
@@ -30,10 +30,9 @@ RIVET_VERSION="v0.2.0" curl -sSL https://raw.githubusercontent.com/go-rivet/rive
 
 ### Release Artifacts
 
-Release binaries are available for multiple operating systems and architectures. Linux release binaries are statically linked; macOS and Windows binaries use their platform system libraries. Download the matching executable for your host platform directly from the **GitHub Releases** panel:
+Release binaries are available for Linux and Windows. Linux release binaries are statically linked; Windows binaries use platform system libraries. Download the matching executable for your host platform directly from the **GitHub Releases** panel:
 
-*   **Linux:** `linux/amd64`, `linux/arm64`, `linux/386`
-*   **macOS:** `darwin/amd64`, `darwin/arm64`
+*   **Linux:** `linux/amd64`, `linux/arm64`, `linux/arm/7`, `linux/386`
 *   **Windows:** `windows/amd64`, `windows/arm64`, `windows/386`
 
 
@@ -79,10 +78,7 @@ docker run --rm -it ghcr.io/go-rivet/rivet:latest-alpine
 
 The container caches Go modules, compiled packages, and Zig artifacts in `${XDG_CACHE_HOME:-$HOME/.cache}/rivet/toolchain`. The first build downloads missing dependencies; subsequent builds reuse them. Set `TOOLCHAIN_CACHE_DIR` to use a different cache directory.
 
-`make release` also uses the containerized toolchain and requires a macOS SDK.
-When using Docker through a virtual machine, the SDK and workspace must be
-available to the Docker daemon as bind mounts. The release workflow runs on
-macOS and makes the runner's installed SDK available to Docker.
+`make release` uses the containerized toolchain to build Linux and Windows artifacts; it does not require a macOS SDK by default. The release workflow builds each platform in a separate CI job and combines the archives and checksums for publication. When building a macOS binary using Docker through a virtual machine, the SDK and workspace must be available to the Docker daemon as bind mounts.
 The test targets currently run on the host and require Go and Zig 0.14.1.
 
 ```bash
@@ -93,7 +89,7 @@ make deps
 make build
 make install
 
-# Release build (all supported platforms).
+# Release build (Linux and Windows).
 make release
 
 # Development commands.

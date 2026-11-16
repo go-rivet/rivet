@@ -79,13 +79,31 @@ jobs:
     needs: [build, test]
     uses: ./.github/workflows/e2e.yml
 
-  release:
-    name: Release
+  release-build:
+    name: Release build (${{ matrix.target.platform }})
     needs: [lint, test]
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: macos-15-intel
+    runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - platform: linux/386
+            archive: rivet-linux-386.tar.gz
+          - platform: linux/amd64
+            archive: rivet-linux-amd64.tar.gz
+          - platform: linux/arm64
+            archive: rivet-linux-arm64.tar.gz
+          - platform: linux/arm/7
+            archive: rivet-linux-armv7.tar.gz
+          - platform: windows/386
+            archive: rivet-windows-386.zip
+          - platform: windows/amd64
+            archive: rivet-windows-amd64.zip
+          - platform: windows/arm64
+            archive: rivet-windows-arm64.zip
     steps:
       - name: Checkout Code Repository
         uses: actions/checkout@v7
@@ -96,24 +114,41 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/rivet/toolchain
-          key: rivet-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'go.mod', 'go.sum', 'tools/toolchain/Dockerfile') }}
-
-      - name: Configure Docker
-        uses: douglascamata/setup-docker-macos-action@v1.1.0
-        with:
-          lima: v1.2.1
-          colima: v0.9.1
-
-      - name: Make macOS SDK available to Docker
-        run: |
-          SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
-          ditto "$SDK_PATH" "$HOME/MacOSX.sdk"
-          echo "MACOS_SDK_PATH=$HOME/MacOSX.sdk" >> "$GITHUB_ENV"
+          key: rivet-release-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.archive }}-${{ hashFiles('Makefile', 'go.mod', 'go.sum', 'tools/toolchain/Dockerfile') }}
 
       - name: Run Makefile Release Target
+        env:
+          PLATFORM: ${{ matrix.target.platform }}
         run: |
           TAG_VERSION=${GITHUB_REF#refs/tags/}
-          TOOLCHAIN_CACHE_DIR="$HOME/.cache/rivet/toolchain" VERSION=$TAG_VERSION make release
+          TOOLCHAIN_CACHE_DIR="$HOME/.cache/rivet/toolchain" VERSION="$TAG_VERSION" make release PLATFORMS="$PLATFORM"
+
+      - name: Upload Release Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target.archive }}
+          path: dist/${{ matrix.target.archive }}
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: release-build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Release Archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate Checksums
+        run: |
+          cd dist
+          sha256sum rivet-*.tar.gz rivet-*.zip > rivet_checksums.txt
 
       - name: Publish Official GitHub Release
         uses: softprops/action-gh-release@v3

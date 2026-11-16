@@ -35,9 +35,7 @@ NATIVE_ZIG_TARGET = $(call zig_target,$(if $(filter linux/arm,$(NATIVE_PLATFORM)
 NATIVE_SDK_FLAGS = $(if $(filter darwin,$(shell go env GOOS)),-isysroot $(MACOS_SDK_PATH) -L$(MACOS_SDK_PATH)/usr/lib -F$(MACOS_SDK_PATH)/System/Library/Frameworks,)
 
 # Target OS and Architectures (The GoReleaser matrix equivalent)
-PLATFORMS    = darwin/amd64 \
-               darwin/arm64 \
-               linux/386 \
+PLATFORMS    = linux/386 \
                linux/amd64 \
                linux/arm64 \
                linux/arm/7 \
@@ -230,7 +228,7 @@ help:
 	@echo "  make test TEST=TestFoo"
 	@echo "  make test-e2e TEST=task/transform/task.transform.patsubst.txtar"
 
-## release: Build release artifacts for all platforms using Docker
+## release: Build Linux and Windows release artifacts using Docker
 release: .toolchain
 	$(if $(filter darwin/%,$(PLATFORMS)),@test -n "$(MACOS_SDK_PATH)" && test -d "$(MACOS_SDK_PATH)" || { echo "A macOS SDK is required for Darwin cgo builds; set MACOS_SDK_PATH." >&2; exit 1; },)
 	@mkdir -p "$(TOOLCHAIN_CACHE_DIR)"
