@@ -17,7 +17,10 @@ void rivet_lua_register_loggers(lua_State *state, uint64_t context_id);
 void rivet_lua_register_funcs(lua_State *state);
 void rivet_lua_register_task(lua_State *state, uint64_t context_id);
 void rivet_lua_register_cmd(lua_State *state, uint64_t context_id);
+void rivet_lua_register_flow(lua_State *state, uint64_t context_id, int ignore_status);
+int rivet_lua_flow_read(lua_State *state, int *kind, const char **message, size_t *length);
 void rivet_lua_set_context(lua_State *state, uint64_t context_id);
+void rivet_lua_protect_calls(lua_State *state, uint64_t context_id);
 int goLuaPrint(uint64_t context_id, char *message, size_t length);
 int goLuaLog(uint64_t context_id, int level, char *message, size_t length);
 
@@ -74,6 +77,7 @@ type runContext struct {
 	stdout     io.Writer
 	taskRunner TaskRunner
 	cmdRunner  CmdRunner
+	onFatal    func(*FlowError)
 }
 
 // Run starts a fresh Lua state and makes a snapshot of vars available as ctx.vars.
@@ -107,13 +111,14 @@ func Run(ctx context.Context, opts *Options) (runErr error) {
 		stdout = os.Stdout
 	}
 	id := logContextID.Add(1)
-	logContexts.Store(id, runContext{ctx: ctx, stdout: stdout, taskRunner: opts.TaskRunner, cmdRunner: opts.CmdRunner})
+	logContexts.Store(id, runContext{ctx: ctx, stdout: stdout, taskRunner: opts.TaskRunner, cmdRunner: opts.CmdRunner, onFatal: opts.OnFatal})
 	defer logContexts.Delete(id)
 
 	return state.WithState(func(statePtr unsafe.Pointer) error {
 		L := (*C.lua_State)(statePtr)
 		C.rivet_lua_register_loggers(L, C.uint64_t(id))
 		C.rivet_lua_register_funcs(L)
+		C.rivet_lua_register_flow(L, C.uint64_t(id), cbool(opts.IgnoreStatus))
 		if opts.TaskRunner != nil {
 			C.rivet_lua_register_task(L, C.uint64_t(id))
 		}
@@ -121,6 +126,7 @@ func Run(ctx context.Context, opts *Options) (runErr error) {
 			C.rivet_lua_register_cmd(L, C.uint64_t(id))
 		}
 		C.rivet_lua_set_context(L, C.uint64_t(id))
+		C.rivet_lua_protect_calls(L, C.uint64_t(id))
 
 		names := make([]string, 0, len(opts.Vars))
 		for name := range opts.Vars {
@@ -194,12 +200,29 @@ func Run(ctx context.Context, opts *Options) (runErr error) {
 }
 
 func luaError(L *C.lua_State) error {
+	var kind C.int
+	var flowMessage *C.char
+	var flowLength C.size_t
+	if C.rivet_lua_flow_read(L, &kind, &flowMessage, &flowLength) != 0 {
+		return &FlowError{Kind: FlowKind(kind), Message: C.GoStringN(flowMessage, C.int(flowLength))}
+	}
 	var length C.size_t
 	message := C.lua_tolstring(L, -1, &length)
 	if message == nil {
 		return &ScriptError{Message: "script failed with a non-string error"}
 	}
 	return &ScriptError{Message: C.GoStringN(message, C.int(length))}
+}
+
+//export goLuaFatal
+func goLuaFatal(contextID C.uint64_t, message *C.char, length C.size_t) {
+	value, ok := logContexts.Load(uint64(contextID))
+	if !ok {
+		return
+	}
+	if callback := value.(runContext).onFatal; callback != nil {
+		callback(&FlowError{Kind: FlowFatal, Message: C.GoStringN(message, C.int(length))})
+	}
 }
 
 func pushValue(L *C.lua_State, value reflect.Value, depth int) error {

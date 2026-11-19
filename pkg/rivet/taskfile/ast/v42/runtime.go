@@ -79,6 +79,7 @@ func taskToRuntime(t *Task) *ast.Task {
 	}
 	return &ast.Task{
 		Task:                 t.Task,
+		Lua:                  t.Lua,
 		Cmds:                 mapSlice(t.Cmds, cmdToRuntime),
 		Deps:                 mapSlice(t.Deps, depToRuntime),
 		Label:                t.Label,
@@ -88,8 +89,6 @@ func taskToRuntime(t *Task) *ast.Task {
 		Requires:             requiresToRuntime(t.Requires),
 		Aliases:              t.Aliases,
 		Transform:            transformToRuntime(t.Transform),
-		Status:               t.Status,
-		Preconditions:        mapSlice(t.Preconditions, func(p *Precondition) *ast.Precondition { return &ast.Precondition{Sh: p.Sh, Msg: p.Msg} }),
 		Dir:                  t.Dir,
 		Set:                  t.Set,
 		Shopt:                t.Shopt,

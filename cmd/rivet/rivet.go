@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-rivet/rivet/internal/config"
 	"github.com/go-rivet/rivet/internal/filepathext"
+	"github.com/go-rivet/rivet/internal/luascript"
 	"github.com/go-rivet/rivet/internal/sort"
 	"github.com/go-rivet/rivet/internal/version"
 	task "github.com/go-rivet/rivet/pkg/rivet"
@@ -30,7 +31,9 @@ func main() {
 		if err == nil {
 			os.Exit(errors.CodeOk)
 		}
-		if isGA, _ := strconv.ParseBool(os.Getenv("GITHUB_ACTIONS")); isGA {
+		var flow *luascript.FlowError
+		silentFlow := errors.As(err, &flow) && flow.Message == ""
+		if isGA, _ := strconv.ParseBool(os.Getenv("GITHUB_ACTIONS")); isGA && !silentFlow {
 			if e, ok := err.(*errors.TaskRunError); ok {
 				_, _ = fmt.Fprintf(os.Stdout, "::error title=Task '%s' failed::%v\n", e.TaskName, e.Err)
 			} else {
@@ -88,7 +91,10 @@ func main() {
 
 	// Run rivet.
 	if err := run(ctx); err != nil {
-		rlog.Errorf(ctx, "%v\n", err)
+		var flow *luascript.FlowError
+		if !errors.As(err, &flow) || flow.Message != "" {
+			rlog.Errorf(ctx, "%v\n", err)
+		}
 		exit(err)
 	}
 	exit(nil)
@@ -254,6 +260,7 @@ func (o *flagsOption) ApplyToExecutor(e *task.Executor) {
 		task.WithAssumeYes(c.AssumeYes),
 		task.WithInteractive(c.Interactive),
 		task.WithDry(c.Dry || c.Status),
+		task.WithSuperDry(c.SuperDry),
 		task.WithSummary(c.Summary),
 		task.WithParallel(c.Parallel),
 		task.WithColor(c.Color),

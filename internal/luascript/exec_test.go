@@ -91,6 +91,104 @@ func TestRunReturnsLuaErrors(t *testing.T) {
 	}
 }
 
+func TestFlowControl(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		kind FlowKind
+	}{
+		{"skip", FlowSkip}, {"done", FlowDone}, {"precondition", FlowPrecondition},
+		{"fail", FlowFail}, {"fatal", FlowFatal}, {"status", FlowStatus},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, invocation := range []struct{ args, message string }{
+				{``, ``},
+				{`true`, ``},
+				{`"message"`, `message`},
+				{`true, "message"`, `message`},
+			} {
+				script := `task.` + tc.name + `(` + invocation.args + `)`
+				err := Run(context.Background(), &Options{Script: script})
+				var flow *FlowError
+				if !errors.As(err, &flow) || flow.Kind != tc.kind {
+					t.Fatalf("%s: got %v, want flow %d", script, err, tc.kind)
+				}
+				if flow.Message != invocation.message {
+					t.Fatalf("%s: unexpected message %q", script, flow.Message)
+				}
+			}
+			for _, script := range []string{
+				`task.` + tc.name + `(false)`,
+				`task.` + tc.name + `(false, "message")`,
+				`assert(not pcall(task.` + tc.name + `, true))`,
+				`local ok, value = xpcall(task.` + tc.name + `, function() return "caught" end); assert(not ok and value == "caught")`,
+			} {
+				if err := Run(context.Background(), &Options{Script: script}); err != nil {
+					t.Fatalf("%s: %v", script, err)
+				}
+			}
+			for _, script := range []string{
+				`task.` + tc.name + `(1)`,
+				`task.` + tc.name + `(true, 1)`,
+				`task.` + tc.name + `("message", true)`,
+				`task.` + tc.name + `(true, "message", "extra")`,
+			} {
+				err := Run(context.Background(), &Options{Script: script})
+				var scriptErr *ScriptError
+				if !errors.As(err, &scriptErr) {
+					t.Fatalf("%s: got %v, want Lua argument error", script, err)
+				}
+			}
+		})
+	}
+}
+
+func TestCaughtFatalCancelsScript(t *testing.T) {
+	for _, script := range []string{
+		`pcall(task.fatal, "stop"); print("continued")`,
+		`xpcall(task.fatal, function() print("handler") end, "stop"); print("continued")`,
+		`local co = coroutine.create(function() task.fatal("stop") end); coroutine.resume(co); print("continued")`,
+		`coroutine.wrap(function() task.fatal("stop") end)(); print("continued")`,
+	} {
+		ctx, cancel := context.WithCancel(context.Background())
+		var fatal *FlowError
+		var stdout bytes.Buffer
+		err := Run(ctx, &Options{
+			Script: script,
+			Stdout: &stdout,
+			OnFatal: func(flow *FlowError) {
+				fatal = flow
+				cancel()
+			},
+		})
+		cancel()
+		if !errors.Is(err, context.Canceled) || fatal == nil || fatal.Message != "stop" || stdout.Len() != 0 {
+			t.Fatalf("%s: got error %v, fatal %v, output %q", script, err, fatal, stdout.String())
+		}
+	}
+}
+
+func TestProtectedCallsAllowCoroutineYield(t *testing.T) {
+	err := Run(context.Background(), &Options{Script: `
+		for _, protected in ipairs({pcall, function(fn) return xpcall(fn, function(err) return err end) end}) do
+			local co = coroutine.create(function()
+				local ok, value = protected(function()
+					coroutine.yield("paused")
+					return "done"
+				end)
+				assert(ok and value == "done")
+				return "finished"
+			end)
+			local ok, value = coroutine.resume(co)
+			assert(ok and value == "paused")
+			ok, value = coroutine.resume(co)
+			assert(ok and value == "finished")
+		end
+	`})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunPreventsLuaFromExitingHostProcess(t *testing.T) {
 	err := Run(context.Background(), &Options{Script: `os.exit(0)`})
 	var scriptErr *ScriptError

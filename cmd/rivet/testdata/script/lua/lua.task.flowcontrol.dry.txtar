@@ -1,0 +1,98 @@
+# Ordinary execution runs task-level Lua, dependencies, and commands.
+rivet start
+cmp stdout expect.run
+exists preview-marker
+rm preview-marker
+rivet --dry=false start
+cmp stdout expect.run
+exists preview-marker
+rm preview-marker
+
+# Normal dry-run executes task-level Lua, including side effects, but not commands.
+rivet --dry start
+cmp stdout expect.dry
+exists preview-marker
+rm preview-marker
+
+# Super dry-run skips all Lua and commands.
+rivet --super-dry start
+cmp stdout empty
+! exists preview-marker
+rivet --dry --super-dry start
+cmp stdout empty
+! exists preview-marker
+rivet --super-dry --dry=false start
+cmp stdout empty
+! exists preview-marker
+
+# Both flags are booleans and super remains a task name.
+rivet super
+stdout '^super task$'
+rivet --dry super
+stdout '^super task$'
+rivet -n super
+stdout '^super task$'
+rivet --dry=true super
+stdout '^super task$'
+rivet --dry -- super
+stdout '^super task$'
+rivet --super-dry super
+cmp stdout empty
+rivet --super-dry=false super
+stdout '^super task$'
+! rivet --dry=super start
+stderr 'invalid boolean value'
+! rivet --dry=invalid start
+stderr 'invalid boolean value'
+
+# Super dry-run is also available through its environment variable.
+env RIVET_SUPER_DRY=true
+rivet start
+cmp stdout empty
+! exists preview-marker
+rivet --super-dry=false start
+cmp stdout expect.run
+exists preview-marker
+rm preview-marker
+env RIVET_SUPER_DRY=
+
+# Status runs task-level Lua unless super dry-run disables it.
+rivet --status status
+exists preview-marker
+rm preview-marker
+rivet --dry --status status
+exists preview-marker
+rm preview-marker
+! rivet --super-dry --status status
+stderr 'status .* unknown'
+cmp stdout empty
+! exists preview-marker
+
+-- expect.run --
+check
+dependency
+body lua
+body command
+-- expect.dry --
+check
+-- empty --
+-- Taskfile.yml --
+version: 42
+tasks:
+  start:
+    lua: |
+      print("check")
+      rivet.cmd("touch preview-marker")
+    deps: [{task: dependency}]
+    cmds:
+      - lua: print("body lua")
+      - cmd: echo body command
+  dependency:
+    cmds:
+      - cmd: echo dependency
+  super:
+    lua: print("super task")
+  status:
+    lua: |
+      rivet.cmd("touch preview-marker")
+      task.status()

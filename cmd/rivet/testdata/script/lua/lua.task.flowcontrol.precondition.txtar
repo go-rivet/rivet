@@ -1,0 +1,76 @@
+! rivet parameter COND=yes
+stderr 'requirement missing'
+! stdout '^after$'
+rivet parameter COND=no
+stdout '^after$'
+! stderr 'requirement missing'
+! rivet external COND=yes
+stderr 'requirement missing'
+! stdout '^after$'
+rivet external COND=no
+stdout '^after$'
+! rivet no-message
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+! rivet no-message-conditional COND=yes
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+rivet no-message-conditional COND=no
+stdout '^after$'
+cmp stderr empty
+
+! rivet task-level COND=yes
+stderr 'task-level requirement missing'
+! stdout '^dependency$'
+! stdout '^task body$'
+rivet task-level COND=no
+stdout '^dependency$'
+stdout '^task body$'
+! rivet invalid-task-level
+stderr 'first argument must be a boolean or message string'
+
+-- empty --
+-- Taskfile.yml --
+version: 42
+tasks:
+  parameter:
+    cmds:
+      - lua: |
+          task.precondition(ctx.vars.COND == "yes", "requirement missing")
+          print("after")
+      - cmd: echo after
+  external:
+    cmds:
+      - lua: |
+          if ctx.vars.COND == "yes" then
+            task.precondition("requirement missing")
+          end
+          print("after")
+      - cmd: echo after
+  no-message:
+    cmds:
+      - lua: |
+          print("before")
+          task.precondition()
+          print("after")
+      - cmd: echo after
+  no-message-conditional:
+    cmds:
+      - lua: |
+          print("before")
+          task.precondition(ctx.vars.COND == "yes")
+          print("after")
+      - cmd: echo after
+  task-level:
+    lua: |
+      task.precondition(ctx.vars.COND == "yes", "task-level requirement missing")
+    deps: [{task: dependency}]
+    cmds:
+      - cmd: echo task body
+  dependency:
+    cmds:
+      - cmd: echo dependency
+  invalid-task-level:
+    lua: task.precondition(123)

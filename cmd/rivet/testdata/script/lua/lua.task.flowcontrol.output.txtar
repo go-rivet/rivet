@@ -1,0 +1,37 @@
+# Successful flow control is not an error for grouped output.
+rivet done
+cmp stdout empty
+rivet skip
+cmp stdout empty
+rivet status
+cmp stdout empty
+! rivet fail
+stdout '^before$'
+
+-- empty --
+-- Taskfile.yml --
+version: 42
+output:
+  group:
+    error_only: true
+tasks:
+  done:
+    cmds:
+      - lua: |
+          print("before")
+          task.done()
+  skip:
+    cmds:
+      - lua: |
+          print("before")
+          task.skip()
+  status:
+    cmds:
+      - lua: |
+          print("before")
+          task.status()
+  fail:
+    cmds:
+      - lua: |
+          print("before")
+          task.fail()

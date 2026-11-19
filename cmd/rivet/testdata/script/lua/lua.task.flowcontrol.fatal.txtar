@@ -1,0 +1,100 @@
+! rivet parameter COND=yes
+stderr 'fatal'
+! stdout '^after$'
+rivet parameter COND=no
+stdout '^after$'
+! stderr 'fatal'
+! rivet external COND=yes
+stderr 'fatal'
+! stdout '^after$'
+rivet external COND=no
+stdout '^after$'
+! rivet no-message
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+! rivet no-message-conditional COND=yes
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+rivet no-message-conditional COND=no
+stdout '^after$'
+cmp stderr empty
+
+# Fatal survives pcall, nested calls, and concurrent execution.
+! rivet caught
+stderr 'fatal caught'
+! stdout 'after'
+! rivet nested
+stderr 'fatal nested'
+! stdout 'after'
+! rivet --parallel --concurrency 2 parallel-fatal delayed
+stderr 'fatal parallel'
+exists ready-marker
+! exists delayed-marker
+
+-- empty --
+-- Taskfile.yml --
+version: 42
+tasks:
+  parameter:
+    cmds:
+      - lua: |
+          task.fatal(ctx.vars.COND == "yes", "fatal")
+          print("after")
+      - cmd: echo after
+  external:
+    cmds:
+      - lua: |
+          if ctx.vars.COND == "yes" then
+            task.fatal("fatal")
+          end
+          print("after")
+      - cmd: echo after
+  no-message:
+    cmds:
+      - lua: |
+          print("before")
+          task.fatal()
+          print("after")
+      - cmd: echo after
+  no-message-conditional:
+    cmds:
+      - lua: |
+          print("before")
+          task.fatal(ctx.vars.COND == "yes")
+          print("after")
+  caught:
+    cmds:
+      - lua: |
+          pcall(task.fatal, "fatal caught")
+          print("after")
+  nested:
+    cmds:
+      - lua: |
+          pcall(rivet.task, "nested-child", {})
+          print("after")
+  nested-child:
+    cmds:
+      - lua: task.fatal("fatal nested")
+  parallel-fatal:
+    cmds:
+      - lua: |
+          while true do
+            local f = io.open("ready-marker", "r")
+            if f then
+              f:close()
+              break
+            end
+          end
+          task.fatal("fatal parallel")
+  delayed:
+    cmds:
+      - lua: |
+          local f = assert(io.open("ready-marker", "w"))
+          f:close()
+          local start = os.clock()
+          while os.clock() - start < 2 do end
+          f = assert(io.open("delayed-marker", "w"))
+          f:close()
+      - cmd: echo after

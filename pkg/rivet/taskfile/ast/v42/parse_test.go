@@ -29,7 +29,6 @@ tasks:
     vars: {Y: y}
     platforms: [linux/amd64]
     requires: {vars: [{name: Z, enum: [a, b]}]}
-    preconditions: [{sh: "true", msg: m}]
     cmds:
       - echo hi
       - task: other
@@ -67,19 +66,33 @@ func TestParseRejectsOtherVersions(t *testing.T) {
 	}
 }
 
+func TestParseTaskLua(t *testing.T) {
+	t.Parallel()
+	var node yaml.Node
+	require.NoError(t, yaml.Unmarshal([]byte("version: 42\ntasks:\n  example:\n    lua: 'task.skip()'\n    cmds: [echo ok]\n"), &node))
+	taskfile, err := v42.Parse(&node)
+	require.NoError(t, err)
+	task, ok := taskfile.Tasks.Get("example")
+	require.True(t, ok)
+	require.Equal(t, "task.skip()", task.Lua)
+	require.Equal(t, task.Lua, task.DeepCopy().Lua)
+}
+
 func TestParseRejectsForAndIf(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]string{
-		"task for":          "for: [one, two]\n    cmds: [echo ok]",
-		"task if":           "if: 'true'\n    cmds: [echo ok]",
-		"command for":       "cmds: [{cmd: echo ok, for: [one, two]}]",
-		"command if":        "cmds: [{cmd: echo ok, if: 'false'}]",
-		"single command if": "cmd: {cmd: echo ok, if: ''}",
-		"dependency for":    "deps: [{task: other, for: [one, two]}]",
-		"dependency if":     "deps: [{task: other, if: 'true'}]",
-		"deferred for":      "cmds: [{defer: {cmd: echo ok, for: [one, two]}}]",
-		"deferred if":       "cmds: [{defer: {cmd: echo ok, if: 'true'}}]",
+		"task for":           "for: [one, two]\n    cmds: [echo ok]",
+		"task if":            "if: 'true'\n    cmds: [echo ok]",
+		"task status":        "status: ['true']",
+		"task preconditions": "preconditions: ['true']",
+		"command for":        "cmds: [{cmd: echo ok, for: [one, two]}]",
+		"command if":         "cmds: [{cmd: echo ok, if: 'false'}]",
+		"single command if":  "cmd: {cmd: echo ok, if: ''}",
+		"dependency for":     "deps: [{task: other, for: [one, two]}]",
+		"dependency if":      "deps: [{task: other, if: 'true'}]",
+		"deferred for":       "cmds: [{defer: {cmd: echo ok, for: [one, two]}}]",
+		"deferred if":        "cmds: [{defer: {cmd: echo ok, if: 'true'}}]",
 	}
 	for name, fields := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -19,12 +19,52 @@ type CmdRunner func(ctx context.Context, cmd string) error
 
 // Options configures one Lua script invocation.
 type Options struct {
-	Script     string
-	Vars       map[string]any
-	Ctx        map[string]any
-	Stdout     io.Writer
-	TaskRunner TaskRunner
-	CmdRunner  CmdRunner
+	Script       string
+	Vars         map[string]any
+	Ctx          map[string]any
+	Stdout       io.Writer
+	TaskRunner   TaskRunner
+	CmdRunner    CmdRunner
+	OnFatal      func(*FlowError)
+	IgnoreStatus bool
+}
+
+type FlowKind int
+
+const (
+	FlowSkip FlowKind = iota + 1
+	FlowDone
+	FlowPrecondition
+	FlowFail
+	FlowFatal
+	FlowStatus
+)
+
+type FlowError struct {
+	Kind    FlowKind
+	Message string
+}
+
+func (err *FlowError) Error() string {
+	if err.Message != "" {
+		return err.Message
+	}
+	switch err.Kind {
+	case FlowSkip:
+		return "task skipped"
+	case FlowDone:
+		return "task completed"
+	case FlowPrecondition:
+		return "task precondition failed"
+	case FlowFail:
+		return "task failed"
+	case FlowFatal:
+		return "fatal task failure"
+	case FlowStatus:
+		return "task is up to date"
+	default:
+		return "unknown task control outcome"
+	}
 }
 
 // ScriptError reports a Lua syntax or runtime error.

@@ -13,32 +13,31 @@ import (
 
 // Task represents a task
 type Task struct {
-	Task          string `json:"-"`
-	Cmds          []*Cmd
-	Deps          []*Dep
-	Label         string
-	Desc          string
-	Prompt        Prompt
-	Summary       string
-	Requires      *Requires
-	Aliases       []string
-	Transform     *Transform
-	Status        []string
-	Preconditions []*Precondition
-	Dir           string
-	Set           []string
-	Shopt         []string
-	Vars          *Vars
-	Dotenv        []string
-	Interactive   bool
-	Internal      bool
-	Prefix        string `json:"-"`
-	IgnoreError   bool
-	Run           string
-	Platforms     []*Platform
-	Watch         bool
-	Location      *Location
-	Failfast      bool
+	Task        string `json:"-"`
+	Lua         string
+	Cmds        []*Cmd
+	Deps        []*Dep
+	Label       string
+	Desc        string
+	Prompt      Prompt
+	Summary     string
+	Requires    *Requires
+	Aliases     []string
+	Transform   *Transform
+	Dir         string
+	Set         []string
+	Shopt       []string
+	Vars        *Vars
+	Dotenv      []string
+	Interactive bool
+	Internal    bool
+	Prefix      string `json:"-"`
+	IgnoreError bool
+	Run         string
+	Platforms   []*Platform
+	Watch       bool
+	Location    *Location
+	Failfast    bool
 	// Populated during merging
 	Namespace            string `json:"-"`
 	IncludeVars          *Vars
@@ -130,8 +129,12 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 				t.Summary = valNode.Value
 			case "dir":
 				t.Dir = valNode.Value
-			case "for", "if":
+			case "for", "if", "status", "preconditions":
 				return unsupportedControlField(keyNode, keyNode.Value)
+			case "lua":
+				if err := valNode.Decode(&t.Lua); err != nil {
+					return errors.NewTaskfileDecodeError(err, valNode)
+				}
 			case "run":
 				t.Run = valNode.Value
 			case "prefix":
@@ -154,10 +157,6 @@ func (t *Task) UnmarshalYAML(node *yaml.Node) error {
 				_ = valNode.Decode(&t.Requires)
 			case "transform":
 				_ = valNode.Decode(&t.Transform)
-			case "status":
-				_ = valNode.Decode(&t.Status)
-			case "preconditions":
-				_ = valNode.Decode(&t.Preconditions)
 			case "platforms":
 				_ = valNode.Decode(&t.Platforms)
 			case "shopt":
@@ -218,6 +217,7 @@ func (t *Task) DeepCopy() *Task {
 	}
 	c := &Task{
 		Task:                 t.Task,
+		Lua:                  t.Lua,
 		Cmds:                 deepcopy.Slice(t.Cmds),
 		Deps:                 deepcopy.Slice(t.Deps),
 		Label:                t.Label,
@@ -226,8 +226,6 @@ func (t *Task) DeepCopy() *Task {
 		Summary:              t.Summary,
 		Aliases:              deepcopy.Slice(t.Aliases),
 		Transform:            t.Transform.DeepCopy(),
-		Status:               deepcopy.Slice(t.Status),
-		Preconditions:        deepcopy.Slice(t.Preconditions),
 		Dir:                  t.Dir,
 		Set:                  deepcopy.Slice(t.Set),
 		Shopt:                deepcopy.Slice(t.Shopt),

@@ -1,0 +1,85 @@
+# Task-level Lua runs before dependencies and the task body.
+rivet start RUN=yes
+cmp stdout expect.run
+rivet start RUN=no
+cmp stdout expect.skip
+rivet force-status
+cmp stdout expect.skip
+rivet --force force-status
+cmp stdout expect.force
+rivet caught-skip
+cmp stdout expect.caught
+! rivet invalid-control
+stderr 'first argument must be a boolean or message string'
+
+# Status evaluates task-level Lua without running dependencies or the body.
+rivet --status status CURRENT=yes
+cmp stdout empty
+! rivet --status status CURRENT=no
+stderr 'not up-to-date'
+cmp stdout empty
+! rivet --status status-skip
+stderr 'not needed'
+stderr 'status .* unknown'
+# A nested task call from a status check must not deadlock at concurrency 1.
+rivet --concurrency 1 --status nested-status
+cmp stdout empty
+
+-- expect.run --
+check
+dependency
+body
+-- expect.skip --
+check
+-- expect.force --
+check
+after status
+body
+-- expect.caught --
+false
+body
+-- empty --
+-- Taskfile.yml --
+version: 42
+tasks:
+  start:
+    lua: |
+      print("check")
+      task.skip(ctx.vars.RUN ~= "yes")
+    deps: [{task: dependency}]
+    cmds:
+      - cmd: echo body
+  dependency:
+    cmds:
+      - cmd: echo dependency
+  force-status:
+    lua: |
+      print("check")
+      task.status()
+      print("after status")
+    cmds:
+      - cmd: echo body
+  caught-skip:
+    lua: |
+      local ok = pcall(task.skip)
+      print(tostring(ok))
+    cmds:
+      - cmd: echo body
+  invalid-control:
+    lua: |
+      task.skip(123)
+  status:
+    lua: |
+      task.status(ctx.vars.CURRENT == "yes")
+    deps: [{task: dependency}]
+    cmds:
+      - cmd: echo body
+  status-skip:
+    lua: |
+      task.skip("not needed")
+  nested-status:
+    lua: |
+      rivet.task("empty", {})
+      task.status()
+  empty:
+    cmds: []

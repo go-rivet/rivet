@@ -91,6 +91,7 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 
 	return &ast.Task{
 		Task:                 origTask.Task,
+		Lua:                  origTask.Lua,
 		Label:                templater.Replace(origTask.Label, cache),
 		Desc:                 templater.Replace(origTask.Desc, cache),
 		Prompt:               templater.Replace(origTask.Prompt, cache),
@@ -158,6 +159,7 @@ func (e *Executor) compiledTaskWithTimestampCache(call *Call, evaluateShVars boo
 
 	new := ast.Task{
 		Task:                 origTask.Task,
+		Lua:                  templater.Replace(origTask.Lua, cache),
 		Label:                templater.Replace(origTask.Label, cache),
 		Desc:                 templater.Replace(origTask.Desc, cache),
 		Prompt:               templater.Replace(origTask.Prompt, cache),

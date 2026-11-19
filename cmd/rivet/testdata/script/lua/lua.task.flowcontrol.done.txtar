@@ -1,0 +1,104 @@
+rivet parameter COND=yes
+stdout '^before$'
+! stdout '^after$'
+stderr 'finished'
+rivet parameter COND=no
+stdout '^after$'
+! stderr 'finished'
+rivet external COND=yes
+stdout '^before$'
+! stdout '^after$'
+stderr 'finished'
+rivet external COND=no
+stdout '^after$'
+rivet no-message
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+rivet no-message-conditional COND=yes
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+rivet no-message-conditional COND=no
+stdout '^after$'
+cmp stderr empty
+rivet deferred
+cmp stdout expect.deferred
+
+rivet before-deps
+cmp stdout expect.before-deps
+stderr 'finished early'
+rivet nested
+cmp stdout expect.nested
+stderr 'child finished'
+
+-- empty --
+-- expect.deferred --
+cleanup
+-- expect.before-deps --
+task before
+-- expect.nested --
+parent before
+child before
+parent after
+parent command
+-- Taskfile.yml --
+version: 42
+tasks:
+  parameter:
+    cmds:
+      - lua: |
+          print("before")
+          task.done(ctx.vars.COND == "yes", "finished")
+          print("after")
+      - cmd: echo after
+  external:
+    cmds:
+      - lua: |
+          print("before")
+          if ctx.vars.COND == "yes" then
+            task.done("finished")
+          end
+          print("after")
+      - cmd: echo after
+  no-message:
+    cmds:
+      - lua: |
+          print("before")
+          task.done()
+          print("after")
+      - cmd: echo after
+  no-message-conditional:
+    cmds:
+      - lua: |
+          print("before")
+          task.done(ctx.vars.COND == "yes")
+          print("after")
+      - cmd: echo after
+  deferred:
+    cmds:
+      - defer: echo cleanup
+      - lua: task.done()
+      - cmd: echo after
+  before-deps:
+    lua: |
+      print("task before")
+      task.done(true, "finished early")
+    deps: [{task: dependency}]
+    cmds:
+      - cmd: echo task body
+  dependency:
+    cmds:
+      - cmd: echo dependency
+  nested:
+    cmds:
+      - lua: |
+          print("parent before")
+          rivet.task("nested-child", {})
+          print("parent after")
+      - cmd: echo parent command
+  nested-child:
+    lua: |
+      print("child before")
+      task.done("child finished")
+      print("child after")

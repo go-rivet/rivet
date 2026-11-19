@@ -1,0 +1,109 @@
+! rivet parameter COND=yes
+stderr 'failed'
+! stdout '^after$'
+rivet parameter COND=no
+stdout '^after$'
+! stderr 'failed'
+! rivet external COND=yes
+stderr 'failed'
+! stdout '^after$'
+rivet external COND=no
+stdout '^after$'
+! rivet no-message
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+! rivet no-message-conditional COND=yes
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+env GITHUB_ACTIONS=true
+! rivet no-message
+stdout '^before$'
+! stdout '::error'
+cmp stderr empty
+env GITHUB_ACTIONS=false
+rivet no-message-conditional COND=no
+stdout '^after$'
+cmp stderr empty
+
+! rivet ignored-fail
+stderr 'ignored failure'
+! stdout '^after$'
+
+! rivet nested
+stderr 'nested failure'
+! stdout '^parent after$'
+
+! rivet --parallel --failfast --concurrency 2 parallel-fail delayed
+stderr 'parallel failure'
+exists ready-marker
+! exists delayed-marker
+
+-- empty --
+-- Taskfile.yml --
+version: 42
+tasks:
+  parameter:
+    cmds:
+      - lua: |
+          task.fail(ctx.vars.COND == "yes", "failed")
+          print("after")
+      - cmd: echo after
+  external:
+    cmds:
+      - lua: |
+          if ctx.vars.COND == "yes" then
+            task.fail("failed")
+          end
+          print("after")
+      - cmd: echo after
+  no-message:
+    cmds:
+      - lua: |
+          print("before")
+          task.fail()
+          print("after")
+      - cmd: echo after
+  no-message-conditional:
+    cmds:
+      - lua: |
+          print("before")
+          task.fail(ctx.vars.COND == "yes")
+          print("after")
+      - cmd: echo after
+  ignored-fail:
+    ignore_error: true
+    cmds:
+      - lua: task.fail("ignored failure")
+      - cmd: echo after
+  nested:
+    cmds:
+      - lua: |
+          print("parent before")
+          rivet.task("nested-child", {})
+          print("parent after")
+      - cmd: echo parent after
+  nested-child:
+    cmds:
+      - lua: task.fail("nested failure")
+  parallel-fail:
+    cmds:
+      - lua: |
+          while true do
+            local f = io.open("ready-marker", "r")
+            if f then
+              f:close()
+              break
+            end
+          end
+          task.fail("parallel failure")
+  delayed:
+    cmds:
+      - lua: |
+          local f = assert(io.open("ready-marker", "w"))
+          f:close()
+          local start = os.clock()
+          while os.clock() - start < 2 do end
+          f = assert(io.open("delayed-marker", "w"))
+          f:close()

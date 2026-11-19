@@ -4,10 +4,85 @@
 //go:build cgo
 
 #include <stdlib.h>
+#include <string.h>
+#include <limits.h>
 #include "lua.h"
 #include "lauxlib.h"
 #include "funcs.h"
 #include "_cgo_export.h"
+
+void rivet_lua_interrupt_context(lua_State *state);
+
+typedef struct {
+	int kind;
+	size_t length;
+	char message[];
+} rivet_lua_flow;
+
+int rivet_lua_flow_read(lua_State *state, int *kind, const char **message, size_t *length) {
+	rivet_lua_flow *flow = luaL_testudata(state, -1, "rivet.flow");
+	if (flow == NULL) return 0;
+	*kind = flow->kind;
+	*message = flow->message;
+	*length = flow->length;
+	return 1;
+}
+
+static int rivet_lua_flow_call(lua_State *state) {
+	int kind = (int)lua_tointeger(state, lua_upvalueindex(1));
+	uint64_t context_id = (uint64_t)lua_tointeger(state, lua_upvalueindex(2));
+	int count = lua_gettop(state);
+	int condition = 1;
+	const char *message = "";
+	size_t length = 0;
+	rivet_lua_flow *flow;
+
+	if (count > 2) return luaL_error(state, "task: expected at most two arguments");
+	if (count >= 1 && !lua_isnil(state, 1)) {
+		if (lua_type(state, 1) == LUA_TBOOLEAN) {
+			condition = lua_toboolean(state, 1);
+		} else if (lua_type(state, 1) == LUA_TSTRING && count == 1) {
+			message = lua_tolstring(state, 1, &length);
+		} else {
+			return luaL_error(state, "task: first argument must be a boolean or message string");
+		}
+	}
+	if (count == 2 && !lua_isnil(state, 2)) {
+		if (lua_type(state, 2) != LUA_TSTRING) {
+			return luaL_error(state, "task: message must be a string");
+		}
+		message = lua_tolstring(state, 2, &length);
+	}
+	if (length > INT_MAX) return luaL_error(state, "task: message is too long");
+	if (!condition || (kind == 6 && lua_toboolean(state, lua_upvalueindex(3)))) return 0;
+
+	flow = lua_newuserdatauv(state, sizeof(*flow) + length, 0);
+	flow->kind = kind;
+	flow->length = length;
+	if (length != 0) memcpy(flow->message, message, length);
+	luaL_setmetatable(state, "rivet.flow");
+	if (kind == 5) {
+		goLuaFatal(context_id, flow->message, length);
+		if (goLuaContextCancelled(context_id)) rivet_lua_interrupt_context(state);
+	}
+	return lua_error(state);
+}
+
+void rivet_lua_register_flow(lua_State *state, uint64_t context_id, int ignore_status) {
+	static const char *names[] = {"skip", "done", "precondition", "fail", "fatal", "status"};
+	size_t i;
+	luaL_newmetatable(state, "rivet.flow");
+	lua_pop(state, 1);
+	lua_createtable(state, 0, 6);
+	for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+		lua_pushinteger(state, (lua_Integer)i + 1);
+		lua_pushinteger(state, (lua_Integer)context_id);
+		lua_pushboolean(state, ignore_status);
+		lua_pushcclosure(state, rivet_lua_flow_call, 3);
+		lua_setfield(state, -2, names[i]);
+	}
+	lua_setglobal(state, "task");
+}
 
 void rivet_lua_free_value(rivet_lua_value *value) {
 	while (value != NULL) {
@@ -109,6 +184,11 @@ static int rivet_lua_task_impl(lua_State *state) {
 	value = goLuaTask(context_id, (char *)task_name, state, 2);
 	if (value == NULL) {
 		return luaL_error(state, "rivet.task: unable to allocate result");
+	}
+	if (goLuaContextCancelled(context_id)) {
+		rivet_lua_free_value(value);
+		rivet_lua_interrupt_context(state);
+		return luaL_error(state, "execution cancelled");
 	}
 	failed = value->type == RIVET_ERROR;
 	if (failed) {

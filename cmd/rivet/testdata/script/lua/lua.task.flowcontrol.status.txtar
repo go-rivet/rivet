@@ -1,0 +1,64 @@
+rivet parameter COND=yes
+stdout '^before$'
+! stdout '^after$'
+stderr 'up to date'
+rivet parameter COND=no
+stdout '^after$'
+! stderr 'up to date'
+rivet --force parameter COND=yes
+stdout '^after$'
+! stderr 'up to date'
+rivet external COND=yes
+stdout '^before$'
+! stdout '^after$'
+stderr 'up to date'
+rivet external COND=no
+stdout '^after$'
+rivet no-message
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+rivet no-message-conditional COND=yes
+stdout '^before$'
+! stdout '^after$'
+cmp stderr empty
+rivet no-message-conditional COND=no
+stdout '^after$'
+cmp stderr empty
+
+# Task-level --status, force, and dry-run behavior is covered in
+# lua.task.flowcontrol.tasklevel.txtar.
+-- empty --
+-- Taskfile.yml --
+version: 42
+tasks:
+  parameter:
+    cmds:
+      - lua: |
+          print("before")
+          task.status(ctx.vars.COND == "yes", "up to date")
+          print("after")
+      - cmd: echo after
+  external:
+    cmds:
+      - lua: |
+          print("before")
+          if ctx.vars.COND == "yes" then
+            task.status("up to date")
+          end
+          print("after")
+      - cmd: echo after
+  no-message:
+    cmds:
+      - lua: |
+          print("before")
+          task.status()
+          print("after")
+      - cmd: echo after
+  no-message-conditional:
+    cmds:
+      - lua: |
+          print("before")
+          task.status(ctx.vars.COND == "yes")
+          print("after")
+      - cmd: echo after

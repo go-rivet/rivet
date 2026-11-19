@@ -50,6 +50,7 @@ type (
 		AssumeTerm          bool // Used for testing
 		Interactive         bool
 		Dry                 bool
+		SuperDry            bool
 		Summary             bool
 		Parallel            bool
 		Color               bool
@@ -466,6 +467,17 @@ func (o *interactiveOption) ApplyToExecutor(e *Executor) {
 // actually running them.
 func WithDry(dry bool) ExecutorOption {
 	return &dryOption{dry}
+}
+
+// WithSuperDry prevents Lua scripts from running during previews.
+func WithSuperDry(superDry bool) ExecutorOption {
+	return &superDryOption{superDry}
+}
+
+type superDryOption struct{ superDry bool }
+
+func (o *superDryOption) ApplyToExecutor(e *Executor) {
+	e.SuperDry = o.superDry
 }
 
 type dryOption struct {

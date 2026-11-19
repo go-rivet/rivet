@@ -39,6 +39,64 @@ static void rivet_lua_check_context(lua_State *state, lua_Debug *debug) {
 	}
 }
 
+void rivet_lua_interrupt_context(lua_State *state) {
+	lua_State *main_state;
+	lua_rawgeti(state, LUA_REGISTRYINDEX, LUA_RIDX_MAINTHREAD);
+	main_state = lua_tothread(state, -1);
+	lua_pop(state, 1);
+	lua_sethook(state, rivet_lua_check_context, LUA_MASKCOUNT, 1);
+	if (main_state != NULL && main_state != state) {
+		lua_sethook(main_state, rivet_lua_check_context, LUA_MASKCOUNT, 1);
+	}
+}
+
+static int rivet_lua_error_handler(lua_State *state) {
+	uint64_t context_id = (uint64_t)lua_tointeger(state, lua_upvalueindex(2));
+	if (goLuaContextCancelled(context_id)) {
+		return luaL_error(state, "execution cancelled");
+	}
+	lua_pushvalue(state, lua_upvalueindex(1));
+	lua_pushvalue(state, 1);
+	lua_call(state, 1, 1);
+	return 1;
+}
+
+/* Preserve coroutine yields while propagating cancellation through protected calls. */
+static int rivet_lua_protected_continue(lua_State *state, int status, lua_KContext context) {
+	(void)status;
+	if (goLuaContextCancelled((uint64_t)context)) {
+		return luaL_error(state, "execution cancelled");
+	}
+	return lua_gettop(state);
+}
+
+static int rivet_lua_protected_call(lua_State *state) {
+	uint64_t context_id = (uint64_t)lua_tointeger(state, lua_upvalueindex(2));
+	int count = lua_gettop(state);
+	if (lua_toboolean(state, lua_upvalueindex(3)) && count >= 2 && lua_isfunction(state, 2)) {
+		lua_pushvalue(state, 2);
+		lua_pushinteger(state, (lua_Integer)context_id);
+		lua_pushcclosure(state, rivet_lua_error_handler, 2);
+		lua_replace(state, 2);
+	}
+	lua_pushvalue(state, lua_upvalueindex(1));
+	lua_insert(state, 1);
+	lua_callk(state, count, LUA_MULTRET, (lua_KContext)context_id, rivet_lua_protected_continue);
+	return rivet_lua_protected_continue(state, LUA_OK, (lua_KContext)context_id);
+}
+
+void rivet_lua_protect_calls(lua_State *state, uint64_t context_id) {
+	static const char *names[] = {"pcall", "xpcall"};
+	int i;
+	for (i = 0; i < 2; i++) {
+		lua_getglobal(state, names[i]);
+		lua_pushinteger(state, (lua_Integer)context_id);
+		lua_pushboolean(state, i == 1);
+		lua_pushcclosure(state, rivet_lua_protected_call, 3);
+		lua_setglobal(state, names[i]);
+	}
+}
+
 static int rivet_lua_log(lua_State *state) {
 	int level = (int)lua_tointeger(state, lua_upvalueindex(1));
 	uint64_t context_id = (uint64_t)lua_tointeger(state, lua_upvalueindex(2));

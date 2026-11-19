@@ -148,7 +148,7 @@ func (e *Executor) ToEditorOutput(tasks []*ast.Task, noStatus bool, nested bool)
 		g.Go(func() error {
 			editorTask := editors.NewTask(tasks[i])
 
-			if noStatus {
+			if noStatus || tasks[i].Lua != "" {
 				editorTasks[i] = editorTask
 				return nil
 			}

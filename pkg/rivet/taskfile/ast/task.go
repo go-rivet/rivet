@@ -14,6 +14,7 @@ import (
 // Task represents a task
 type Task struct {
 	Task          string `json:"-"`
+	Lua           string
 	Cmds          []*Cmd
 	Deps          []*Dep
 	Label         string
@@ -215,6 +216,7 @@ func (t *Task) DeepCopy() *Task {
 	}
 	c := &Task{
 		Task:                 t.Task,
+		Lua:                  t.Lua,
 		Cmds:                 deepcopy.Slice(t.Cmds),
 		Deps:                 deepcopy.Slice(t.Deps),
 		Label:                t.Label,

@@ -32,7 +32,8 @@ type Config struct {
 	// Execution flags
 	Parallel    bool `sflag:"p" noenv:"true" doc:"Executes tasks provided on command line in parallel."`
 	Concurrency int  `sflag:"C" default:"0" doc:"Limit number of tasks to run concurrently."`
-	Dry         bool `sflag:"n" doc:"Compiles and prints tasks in the order that they would be run, without executing them."`
+	Dry         bool `sflag:"n" doc:"Print tasks without executing commands; task-level Lua still runs."`
+	SuperDry    bool `doc:"Print tasks without executing commands or Lua."`
 	Summary     bool `noenv:"true" doc:"Show summary about a task."`
 	ExitCode    bool `sflag:"x" noenv:"true" doc:"Pass-through the exit code of the task command."`
 	Failfast    bool `sflag:"F" doc:"When running tasks in parallel, stop all tasks if one fails."`
@@ -85,6 +86,9 @@ type Config struct {
 
 func (c *Config) Adjust() {
 	c.Dir = cmp.Or(c.Dir, filepath.Dir(c.Taskfile))
+	if c.SuperDry {
+		c.Dry = true
+	}
 
 	switch {
 	case c.V3:

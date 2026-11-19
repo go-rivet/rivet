@@ -4,12 +4,18 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/fingerprint"
+	"github.com/go-rivet/rivet/internal/luascript"
+	"github.com/go-rivet/rivet/pkg/rivet/errors"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 )
 
 // Status returns an error if any the of given tasks is not up-to-date
-func (e *Executor) Status(ctx context.Context, calls ...*Call) error {
+func (e *Executor) Status(ctx context.Context, calls ...*Call) (runErr error) {
+	ctx, cancel := withFatalContext(ctx)
+	defer cancel(nil)
+	defer returnFatalCause(ctx, &runErr)
 	e.ctx = ctx
 
 	for _, call := range calls {
@@ -18,6 +24,33 @@ func (e *Executor) Status(ctx context.Context, calls ...*Call) error {
 		t, err := e.CompiledTask(call)
 		if err != nil {
 			return err
+		}
+
+		if t.Lua != "" {
+			if e.SuperDry {
+				return fmt.Errorf(`task: status of %q is unknown: task-level Lua is disabled by --super-dry`, t.Name())
+			}
+			shellVars, err := e.shellVars(ctx, t, call)
+			if err != nil {
+				return err
+			}
+			release := e.acquireConcurrencyLimit()
+			err = e.runTaskLua(ctx, t, call, env.GetFromVars(shellVars))
+			release()
+			var flow *luascript.FlowError
+			if errors.As(err, &flow) {
+				if flow.Kind == luascript.FlowStatus {
+					handleLuaFlow(ctx, flow)
+					continue
+				}
+				if flow.Kind == luascript.FlowSkip || flow.Kind == luascript.FlowDone {
+					handleLuaFlow(ctx, flow)
+					return fmt.Errorf(`task: status of %q is unknown: Lua finished without reporting status`, t.Name())
+				}
+			}
+			if err != nil {
+				return err
+			}
 		}
 
 		// Check if the task is up-to-date

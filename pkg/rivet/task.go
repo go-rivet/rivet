@@ -45,8 +45,26 @@ type MatchingTask struct {
 	Wildcards []string
 }
 
+type fatalCancelKey struct{}
+type taskLuaKey struct{}
+
+func withFatalContext(ctx context.Context) (context.Context, context.CancelCauseFunc) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	return context.WithValue(ctx, fatalCancelKey{}, cancel), cancel
+}
+
+func returnFatalCause(ctx context.Context, result *error) {
+	var flow *luascript.FlowError
+	if errors.As(context.Cause(ctx), &flow) && flow.Kind == luascript.FlowFatal {
+		*result = flow
+	}
+}
+
 // Run runs Task
-func (e *Executor) Run(ctx context.Context, calls ...*Call) error {
+func (e *Executor) Run(ctx context.Context, calls ...*Call) (runErr error) {
+	ctx, cancel := withFatalContext(ctx)
+	defer cancel(nil)
+	defer returnFatalCause(ctx, &runErr)
 	// One trace per command invocation; each RunTask call mints its own span.
 	ctx = rlog.WithTrace(ctx, rlog.NewTraceID(), "", "")
 	e.ctx = ctx
@@ -131,7 +149,16 @@ func (e *Executor) splitRegularAndWatchCalls(calls ...*Call) (regularCalls []*Ca
 }
 
 // RunTask runs a task by its name
-func (e *Executor) RunTask(ctx context.Context, call *Call) error {
+func (e *Executor) RunTask(ctx context.Context, call *Call) (runErr error) {
+	if ctx.Value(fatalCancelKey{}) == nil {
+		var cancel context.CancelCauseFunc
+		ctx, cancel = withFatalContext(ctx)
+		defer cancel(nil)
+		defer returnFatalCause(ctx, &runErr)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if tailName, ok := tailTaskName(call.Task); ok {
 		entries := e.TaskfileDAG.Tails(tailName)
 		if len(entries) == 0 {
@@ -288,6 +315,16 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			rlog.Task(ctx, "Task finished", "task", call.Task, "action", "finish", "hash", hash, "duration", elapsed, "error", err, "kind", string(call.Kind))
 		}()
 
+		if t.Lua != "" {
+			err := e.runTaskLua(ctx, t, call, taskEnv)
+			if handled, result := handleLuaFlow(ctx, err); handled {
+				return result
+			}
+			if err != nil {
+				return err
+			}
+		}
+
 		if len(t.Deps) > 0 {
 			if err := e.runDeps(ctx, t, call, taskEnv); err != nil {
 				return err
@@ -366,6 +403,9 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 			}
 
 			if err := e.runCommand(ctx, t, call, i, taskEnv); err != nil {
+				if handled, result := handleLuaFlow(ctx, err); handled {
+					return result
+				}
 				if err2 := e.statusOnError(t); err2 != nil {
 					rlog.Debugf(ctx, "task: error cleaning status on error: %v\n", err2)
 				}
@@ -389,6 +429,30 @@ func (e *Executor) RunTask(ctx context.Context, call *Call) error {
 	}
 
 	return nil
+}
+
+func handleLuaFlow(ctx context.Context, err error) (bool, error) {
+	var flow *luascript.FlowError
+	if !errors.As(err, &flow) {
+		return false, nil
+	}
+	switch flow.Kind {
+	case luascript.FlowSkip, luascript.FlowDone, luascript.FlowStatus:
+		if flow.Message != "" {
+			rlog.Errf(ctx, rlog.Magenta, "%s\n", flow.Message)
+		}
+		return true, nil
+	case luascript.FlowPrecondition, luascript.FlowFail, luascript.FlowFatal:
+		return true, flow
+	default:
+		return false, nil
+	}
+}
+
+func (e *Executor) runTaskLua(ctx context.Context, t *ast.Task, call *Call, taskEnv []string) error {
+	copy := *t
+	copy.Cmds = []*ast.Cmd{{Lua: t.Lua}}
+	return e.runCommand(context.WithValue(ctx, taskLuaKey{}, true), &copy, call, 0, taskEnv)
 }
 
 func (e *Executor) mkdir(t *ast.Task) error {
@@ -498,7 +562,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 			rlog.Debugf(ctx, "task: [%s] Lua script not for current platform - ignored\n", t.Name())
 			return nil
 		}
-		if e.Dry {
+		if e.Dry && (e.SuperDry || ctx.Value(taskLuaKey{}) != true) {
 			return nil
 		}
 		vars, err := e.taskVars(t, call, false)
@@ -542,10 +606,16 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		stdOut, stdErr, closer := outputWrapper.WrapWriter(e.Stdout, e.Stderr, t.Prefix, cache)
 		rlog.Infof(ctx, "task: [%s] running Lua script\n", t.Name())
 		err = luascript.Run(ctx, &luascript.Options{
-			Script: cmd.Lua,
-			Vars:   luaVars,
-			Ctx:    luaCtx,
-			Stdout: stdOut,
+			Script:       cmd.Lua,
+			Vars:         luaVars,
+			Ctx:          luaCtx,
+			Stdout:       stdOut,
+			IgnoreStatus: e.ForceAll || (e.Force && !call.Indirect),
+			OnFatal: func(flow *luascript.FlowError) {
+				if cancel, ok := ctx.Value(fatalCancelKey{}).(context.CancelCauseFunc); ok {
+					cancel(flow)
+				}
+			},
 			TaskRunner: func(callCtx context.Context, taskName string, taskVars map[string]any) error {
 				callVars := ast.NewVarsWithCapacity(len(taskVars))
 				for k, v := range taskVars {
@@ -575,10 +645,15 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 				})
 			},
 		})
-		if closeErr := closer(err); closeErr != nil {
+		var flow *luascript.FlowError
+		closeResult := err
+		if errors.As(err, &flow) && (flow.Kind == luascript.FlowSkip || flow.Kind == luascript.FlowDone || flow.Kind == luascript.FlowStatus) {
+			closeResult = nil
+		}
+		if closeErr := closer(closeResult); closeErr != nil {
 			rlog.Errorf(ctx, "task: unable to close Lua output writer: %v\n", closeErr)
 		}
-		if err != nil && cmd.IgnoreError {
+		if err != nil && cmd.IgnoreError && !errors.As(err, &flow) {
 			rlog.Debugf(ctx, "task: [%s] Lua script error ignored: %v\n", t.Name(), err)
 			return nil
 		}
