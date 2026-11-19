@@ -40,11 +40,15 @@ func (e *Executor) Status(ctx context.Context, calls ...*Call) (runErr error) {
 			var flow *luascript.FlowError
 			if errors.As(err, &flow) {
 				if flow.Kind == luascript.FlowStatus {
-					handleLuaFlow(ctx, flow)
+					if _, flowErr := handleLuaFlow(ctx, flow); flowErr != nil {
+						return flowErr
+					}
 					continue
 				}
 				if flow.Kind == luascript.FlowSkip || flow.Kind == luascript.FlowDone {
-					handleLuaFlow(ctx, flow)
+					if _, flowErr := handleLuaFlow(ctx, flow); flowErr != nil {
+						return flowErr
+					}
 					return fmt.Errorf(`task: status of %q is unknown: Lua finished without reporting status`, t.Name())
 				}
 			}
