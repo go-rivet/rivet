@@ -5,9 +5,12 @@ package rivet
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"strings"
 
+	"github.com/go-rivet/rivet/internal/env"
 	"github.com/go-rivet/rivet/internal/filepathext"
 	"github.com/go-rivet/rivet/internal/templater"
 	"github.com/go-rivet/rivet/pkg/rivet/namespace"
@@ -15,8 +18,7 @@ import (
 	"github.com/go-rivet/rivet/pkg/rlog"
 )
 
-// taskVars returns the vars for a task. Version 42 Taskfiles do not use the
-// Compiler: their vars come from the Taskfile DAG.
+// taskVars returns the vars for a task.
 func (e *Executor) taskVars(t *ast.Task, call *Call, evaluateShVars bool) (*ast.Vars, error) {
 	if e.TaskfileDAG == nil {
 		if evaluateShVars {
@@ -24,7 +26,7 @@ func (e *Executor) taskVars(t *ast.Task, call *Call, evaluateShVars bool) (*ast.
 		}
 		return e.Compiler.FastGetVariables(e.ctx, t, call)
 	}
-	return e.v42TaskVars(t, call)
+	return e.v42TaskVars(t, call, evaluateShVars)
 }
 
 func (e *Executor) taskVarDeclarations(t *ast.Task) *ast.Vars {
@@ -49,6 +51,7 @@ func (e *Executor) v42Env() (map[string]any, error) {
 	e.envOnce.Do(func() {
 		e.env = namespace.Environment()
 		scope := e.scope(nil, nil, e.env)
+		e.enableScopeShell(scope, nil)
 		var dotenv map[string]any
 		dotenv, e.envErr = namespace.LoadDotenv(e.Dir, e.Taskfile.Dotenv, scope.Render)
 		maps.Copy(e.env, dotenv)
@@ -65,10 +68,11 @@ func (e *Executor) scope(t *ast.Task, call *Call, env map[string]any) *namespace
 		ns = t.Namespace
 	}
 	return &namespace.Scope{
-		DAG:       e.TaskfileDAG,
-		Namespace: ns,
-		Env:       env,
-		RootEnv:   env,
+		DAG:            e.TaskfileDAG,
+		Namespace:      ns,
+		LocalNamespace: ns,
+		Env:            env,
+		RootEnv:        env,
 		Special: namespace.SpecialVars(namespace.SpecialParams{
 			RootDir:        e.RootDir,
 			Entrypoint:     e.Entrypoint,
@@ -79,9 +83,35 @@ func (e *Executor) scope(t *ast.Task, call *Call, env map[string]any) *namespace
 	}
 }
 
+func (e *Executor) enableScopeShell(scope *namespace.Scope, t *ast.Task) {
+	scope.EvaluateSh = func(resolving *namespace.Scope, variable ast.Var) (string, error) {
+		values := ast.NewVarsWithCapacity(len(scope.Env) + len(scope.Special) + len(scope.Local))
+		for name, value := range scope.Env {
+			values.Set(name, ast.Var{Value: value})
+		}
+		for name, value := range scope.Special {
+			values.Set(name, ast.Var{Value: value})
+		}
+		for name, value := range scope.Local {
+			values.Set(name, ast.Var{Value: value})
+		}
+		dir := e.Dir
+		if t != nil {
+			dirScope := *resolving
+			dirScope.Namespace = scope.LocalNamespace
+			taskDir, err := dirScope.Render(t.Dir)
+			if err != nil {
+				return "", err
+			}
+			dir = filepathext.SmartJoin(e.Dir, taskDir)
+		}
+		return e.Compiler.HandleDynamicVar(e.ctx, variable, dir, env.GetFromVars(values))
+	}
+}
+
 // v42Scope builds the resolution scope for a task. The task's dotenv files are
 // applied over the environment layer.
-func (e *Executor) v42Scope(t *ast.Task, call *Call) (*namespace.Scope, map[string]any, error) {
+func (e *Executor) v42Scope(t *ast.Task, call *Call, evaluateShVars bool) (*namespace.Scope, map[string]any, error) {
 	base, err := e.v42Env()
 	if err != nil {
 		return nil, nil, err
@@ -92,8 +122,14 @@ func (e *Executor) v42Scope(t *ast.Task, call *Call) (*namespace.Scope, map[stri
 	env := maps.Clone(base)
 	scope := e.scope(t, call, env)
 	scope.RootEnv = base
+	if evaluateShVars {
+		e.enableScopeShell(scope, t)
+	}
 	dotenv, err := namespace.LoadDotenv(filepathext.SmartJoin(e.Dir, t.Dir), t.Dotenv, scope.Render)
 	if err != nil {
+		if !evaluateShVars && errors.Is(err, namespace.ErrShellEvaluationDisabled) {
+			return scope, nil, nil
+		}
 		return nil, nil, err
 	}
 	maps.Copy(env, dotenv)
@@ -102,19 +138,22 @@ func (e *Executor) v42Scope(t *ast.Task, call *Call) (*namespace.Scope, map[stri
 
 // namespacedVars returns the templater resolver for a task, or nil for
 // Taskfiles that are not version 42.
-func (e *Executor) namespacedVars(t *ast.Task, call *Call, vars *ast.Vars) templater.NamespacedResolver {
+func (e *Executor) namespacedVars(t *ast.Task, call *Call, vars *ast.Vars, evaluateShVars bool) templater.NamespacedResolver {
 	if e.TaskfileDAG == nil {
 		return nil
 	}
-	scope, _, err := e.v42TaskScope(t, call, vars)
+	scope, _, err := e.v42TaskScope(t, call, vars, evaluateShVars)
 	if err != nil {
-		return func([]string) map[string]any { return nil }
+		return func([]string) (map[string]any, error) { return nil, err }
+	}
+	if evaluateShVars {
+		e.enableScopeShell(scope, t)
 	}
 	return scope.Resolve
 }
 
-func (e *Executor) v42TaskScope(t *ast.Task, call *Call, vars *ast.Vars) (*namespace.Scope, map[string]any, error) {
-	scope, dotenv, err := e.v42Scope(t, call)
+func (e *Executor) v42TaskScope(t *ast.Task, call *Call, vars *ast.Vars, evaluateShVars bool) (*namespace.Scope, map[string]any, error) {
+	scope, dotenv, err := e.v42Scope(t, call, evaluateShVars)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -170,10 +209,11 @@ func (e *Executor) shellVars(ctx context.Context, t *ast.Task, call *Call) (*ast
 	if e.TaskfileDAG == nil {
 		return t.Vars, nil
 	}
-	scope, _, err := e.v42TaskScope(t, call, t.Vars)
+	scope, _, err := e.v42TaskScope(t, call, t.Vars, true)
 	if err != nil {
 		return nil, err
 	}
+	e.enableScopeShell(scope, t)
 	// Taskfiles and their vars are traversed in declaration order, so the
 	// last namespace variable wins when normalized shell names collide.
 	type variableRef struct {
@@ -200,26 +240,20 @@ func (e *Executor) shellVars(ctx context.Context, t *ast.Task, call *Call) (*ast
 	}
 	for name, variable := range t.Vars.All() {
 		vars.Set(name, variable)
-		if variable.Sh != nil && *variable.Sh != "" {
-			rlog.Warnf(ctx, "task: shell variable %q omitted: sh variables are not supported in the DAG\n", name)
-			vars.Set(name, ast.Var{})
-		}
 	}
-	setDAGVar := func(exportName, path, name string) {
+	setDAGVar := func(exportName, path, name string) error {
 		ref := path + ast.NamespaceSeparator + name
-		variable := e.TaskfileDAG.Vars(path)[name]
-		if variable.Sh != nil && *variable.Sh != "" {
-			rlog.Warnf(ctx, "task: shell variable %q omitted: sh variables are not supported in the DAG\n", ref)
-			vars.Set(exportName, ast.Var{})
-			return
+		value, ok, err := scope.ResolveVariable(path, name)
+		if err != nil {
+			return err
 		}
-		value, ok := scope.ResolveVariable(path, name)
 		if !ok {
 			rlog.Warnf(ctx, "task: shell variable %q omitted: unable to resolve value\n", ref)
 			vars.Set(exportName, ast.Var{})
-			return
+			return nil
 		}
 		vars.Set(exportName, ast.Var{Value: value})
+		return nil
 	}
 	taskVars := e.taskVarDeclarations(t)
 	for name := range e.TaskfileDAG.Vars("") {
@@ -231,21 +265,26 @@ func (e *Executor) shellVars(ctx context.Context, t *ast.Task, call *Call) (*ast
 				continue
 			}
 		}
-		setDAGVar(name, "", name)
+		if err := setDAGVar(name, "", name); err != nil {
+			return nil, err
+		}
 	}
 
 	for name, ref := range names {
-		setDAGVar(name, ref.path, ref.name)
+		if err := setDAGVar(name, ref.path, ref.name); err != nil {
+			return nil, err
+		}
 	}
 	return vars, nil
 }
 
 // v42LuaVars returns Lua variables and their structured scope tables.
 func (e *Executor) v42LuaVars(t *ast.Task, call *Call, vars *ast.Vars) (map[string]any, map[string]any, error) {
-	scope, dotenv, err := e.v42TaskScope(t, call, vars)
+	scope, dotenv, err := e.v42TaskScope(t, call, vars, true)
 	if err != nil {
 		return nil, nil, err
 	}
+	e.enableScopeShell(scope, t)
 	taskVars := e.taskVarDeclarations(t)
 
 	result := maps.Clone(scope.Env)
@@ -285,7 +324,11 @@ func (e *Executor) v42LuaVars(t *ast.Task, call *Call, vars *ast.Vars) (map[stri
 			if path != "" {
 				ref = path + ast.NamespaceSeparator + name
 			}
-			if value, ok := scope.ResolveReference(ref); ok {
+			value, ok, err := scope.ResolveReference(ref)
+			if err != nil {
+				return nil, nil, err
+			}
+			if ok {
 				if path == scope.Namespace {
 					result[name] = value
 				}
@@ -329,8 +372,8 @@ func (e *Executor) v42LuaVars(t *ast.Task, call *Call, vars *ast.Vars) (map[stri
 // vars, then task vars and call vars. DAG vars are not copied here, they are
 // resolved on demand by the templater. Call vars are available while task
 // vars are evaluated and override task vars with the same name.
-func (e *Executor) v42TaskVars(t *ast.Task, call *Call) (*ast.Vars, error) {
-	scope, _, err := e.v42Scope(t, call)
+func (e *Executor) v42TaskVars(t *ast.Task, call *Call, evaluateShVars bool) (*ast.Vars, error) {
+	scope, _, err := e.v42Scope(t, call, evaluateShVars)
 	if err != nil {
 		return nil, err
 	}
@@ -343,6 +386,43 @@ func (e *Executor) v42TaskVars(t *ast.Task, call *Call) (*ast.Vars, error) {
 		vars.Set(name, ast.Var{Value: value})
 	}
 	scope.Local = make(map[string]any)
+	if evaluateShVars {
+		e.enableScopeShell(scope, t)
+		scope.LocalVars = make(map[string]ast.Var, taskVars.Len())
+		for name, v := range taskVars.All() {
+			scope.LocalVars[name] = v
+		}
+		if call != nil {
+			for name, v := range call.Vars.All() {
+				scope.LocalVars[name] = v
+			}
+		}
+		for name := range taskVars.Keys() {
+			value, ok, err := scope.ResolveLocal(name)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				return nil, fmt.Errorf("task: unable to resolve variable %q", name)
+			}
+			scope.Local[name] = value
+			vars.Set(name, ast.Var{Value: value})
+		}
+		if call != nil {
+			for name := range call.Vars.Keys() {
+				value, ok, err := scope.ResolveLocal(name)
+				if err != nil {
+					return nil, err
+				}
+				if !ok {
+					return nil, fmt.Errorf("task: unable to resolve variable %q", name)
+				}
+				scope.Local[name] = value
+				vars.Set(name, ast.Var{Value: value})
+			}
+		}
+		return vars, nil
+	}
 	cache := &templater.Cache{Vars: vars, Namespaced: scope.Resolve}
 	if call != nil {
 		for name, v := range call.Vars.All() {
@@ -361,5 +441,5 @@ func (e *Executor) v42TaskVars(t *ast.Task, call *Call) (*ast.Vars, error) {
 		setLocalVar(scope.Local, name, resolved)
 		cache.ResetCache()
 	}
-	return vars, cache.Err()
+	return vars, nil
 }

@@ -1,0 +1,57 @@
+# Identical shell commands share a cached value across scopes and task calls.
+# Cache entries use the rendered command, so different inputs run separately.
+rivet --list-all
+! exists shared.hits
+! exists rendered.hits
+rivet start
+cmp stdout expect.stdout
+cmp shared.hits expect.shared.hits
+cmp rendered.hits expect.rendered.hits
+
+-- Taskfile.yml --
+version: 42
+vars:
+  ROOT_SH: {sh: "echo shared >> shared.hits; printf shared"}
+tasks:
+  start:
+    vars:
+      TASK_SH: {sh: "echo shared >> shared.hits; printf shared"}
+    cmds:
+      - cmd: echo "root={{.ROOT_SH}} task={{.TASK_SH}}"
+      - task: ns:check
+        vars:
+          CALL_SH: {sh: "echo shared >> shared.hits; printf shared"}
+      - task: rendered
+        vars: {INPUT: alpha}
+      - task: rendered
+        vars: {INPUT: alpha}
+      - task: rendered
+        vars: {INPUT: beta}
+  rendered:
+    vars:
+      RESULT: {sh: "echo {{.INPUT}} >> rendered.hits; printf {{.INPUT}}"}
+    cmds:
+      - cmd: echo "rendered={{.RESULT}}"
+---
+version: 42
+namespace: ns
+vars:
+  NS_SH: {sh: "echo shared >> shared.hits; printf shared"}
+tasks:
+  check:
+    cmds:
+      - cmd: echo "namespace={{.NS_SH}} call={{.CALL_SH}}"
+      - cmd: echo "again={{.NS_SH}}/{{.CALL_SH}}/{{.:ROOT_SH}}"
+
+-- expect.stdout --
+root=shared task=shared
+namespace=shared call=shared
+again=shared/shared/shared
+rendered=alpha
+rendered=alpha
+rendered=beta
+-- expect.shared.hits --
+shared
+-- expect.rendered.hits --
+alpha
+beta

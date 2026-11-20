@@ -87,7 +87,7 @@ func (e *Executor) CompiledTaskForTaskList(call *Call) (*ast.Task, error) {
 		return nil, err
 	}
 
-	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(origTask, call, vars)}
+	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(origTask, call, vars, false)}
 
 	return &ast.Task{
 		Task:                 origTask.Task,
@@ -145,7 +145,7 @@ func (e *Executor) compiledTaskWithTimestampCache(call *Call, evaluateShVars boo
 		}
 	}
 
-	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(origTask, call, vars)}
+	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(origTask, call, vars, evaluateShVars)}
 
 	// Resolve enum refs only when dynamic variables have been evaluated,
 	// since enum refs may depend on shell-derived variables (e.g. fromJson)

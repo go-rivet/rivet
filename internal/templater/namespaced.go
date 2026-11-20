@@ -12,7 +12,7 @@ import (
 // NamespacedResolver returns the values of the namespaced var references
 // ("ns:name" or ":name") found in a template. References it cannot resolve are
 // left out.
-type NamespacedResolver func(refs []string) map[string]any
+type NamespacedResolver func(refs []string) (map[string]any, error)
 
 func isIdentStart(c byte) bool {
 	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
@@ -127,7 +127,10 @@ func withNamespaced(str string, data map[string]any, resolve NamespacedResolver)
 	if len(refs) == 0 {
 		return str, data, nil
 	}
-	resolved := resolve(refs)
+	resolved, err := resolve(refs)
+	if err != nil {
+		return str, nil, err
+	}
 	extended := maps.Clone(data)
 	if extended == nil {
 		extended = map[string]any{}

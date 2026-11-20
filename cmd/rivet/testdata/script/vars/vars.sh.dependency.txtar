@@ -1,0 +1,26 @@
+# Dependency call variables resolve shell commands against namespace and root vars.
+rivet ns:start
+cmp stdout expect.stdout
+
+-- Taskfile.yml --
+version: 42
+vars:
+  ROOT_SH: {sh: "printf root"}
+---
+version: 42
+namespace: ns
+vars:
+  NS_SH: {sh: "printf namespace"}
+tasks:
+  start:
+    deps:
+      - task: check
+        vars:
+          CALL_NS: {sh: "printf '%s-dep' '{{.NS_SH}}'"}
+          CALL_ROOT: {sh: "printf '%s-dep' '{{.:ROOT_SH}}'"}
+  check:
+    cmds:
+      - cmd: echo "namespace={{.CALL_NS}} root={{.CALL_ROOT}}"
+
+-- expect.stdout --
+namespace=namespace-dep root=root-dep

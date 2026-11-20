@@ -1,0 +1,36 @@
+# Shell and static variables can depend on shell variables across the DAG.
+rivet ns:start
+cmp stdout expect.stdout
+
+-- Taskfile.yml --
+version: 42
+vars:
+  ROOT_SH: {sh: "printf root"}
+  ROOT_FROM_LOCAL: "{{.TASK_LOCAL}}"
+---
+version: 42
+namespace: ns
+vars:
+  NS_SH: {sh: "printf '%s-namespace' '{{.:ROOT_SH}}'"}
+tasks:
+  start:
+    vars:
+      TASK_CHAIN: {sh: "printf '%s-task' '{{.NS_SH}}'"}
+      TASK_ROOT: {sh: "printf '%s-direct' '{{.:ROOT_SH}}'"}
+      TASK_STATIC: "{{.NS_SH}}-static"
+      TASK_INDIRECT: "{{.:ROOT_FROM_LOCAL}}"
+      TASK_LOCAL: {sh: "printf '%s-local' '{{.NS_SH}}'"}
+    cmds:
+      - cmd: echo "chain={{.TASK_CHAIN}} direct={{.TASK_ROOT}} static={{.TASK_STATIC}} indirect={{.TASK_INDIRECT}}"
+      - task: check
+        vars:
+          CALL_NS: {sh: "printf '%s-call' '{{.NS_SH}}'"}
+          CALL_ROOT: {sh: "printf '%s-call' '{{.:ROOT_SH}}'"}
+          CALL_STATIC: "{{.NS_SH}}-call-static"
+  check:
+    cmds:
+      - cmd: echo "call-ns={{.CALL_NS}} call-root={{.CALL_ROOT}} call-static={{.CALL_STATIC}}"
+
+-- expect.stdout --
+chain=root-namespace-task direct=root-direct static=root-namespace-static indirect=root-namespace-local
+call-ns=root-namespace-call call-root=root-call call-static=root-namespace-call-static

@@ -512,7 +512,7 @@ func (e *Executor) runDeferred(taskCtx context.Context, t *ast.Task, call *Call,
 	}
 
 	cmd := t.Cmds[i]
-	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars)}
+	cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars, true)}
 	extra := map[string]any{}
 
 	if deferredExitCode != nil && *deferredExitCode > 0 {
@@ -565,7 +565,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		if e.Dry && (e.SuperDry || ctx.Value(taskLuaKey{}) != true) {
 			return nil
 		}
-		vars, err := e.taskVars(t, call, false)
+		vars, err := e.taskVars(t, call, e.TaskfileDAG != nil)
 		if err != nil {
 			return fmt.Errorf("task: failed to get variables: %w", err)
 		}
@@ -602,7 +602,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 		if t.Interactive {
 			outputWrapper = output.Passthrough{}
 		}
-		cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars)}
+		cache := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars, true)}
 		stdOut, stdErr, closer := outputWrapper.WrapWriter(e.Stdout, e.Stderr, t.Prefix, cache)
 		rlog.Infof(ctx, "task: [%s] running Lua script\n", t.Name())
 		err = luascript.Run(ctx, &luascript.Options{
@@ -675,7 +675,7 @@ func (e *Executor) runCommand(ctx context.Context, t *ast.Task, call *Call, i in
 			outputWrapper = output.Passthrough{}
 		}
 		vars, err := e.taskVars(t, call, false)
-		outputTemplater := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars)}
+		outputTemplater := &templater.Cache{Vars: vars, Namespaced: e.namespacedVars(t, call, vars, false)}
 		if err != nil {
 			return fmt.Errorf("task: failed to get variables: %w", err)
 		}

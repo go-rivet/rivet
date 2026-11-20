@@ -1,0 +1,26 @@
+# Shell variables may select root and task dotenv files.
+rivet --list-all
+! exists task.hits
+rivet check
+cmp stdout expect.stdout
+cmp task.hits expect.hits
+
+-- Taskfile.yml --
+version: 42
+dotenv: ["{{.ROOT_FILE}}"]
+vars:
+  ROOT_FILE: {sh: "printf root.env"}
+  TASK_FILE: {sh: "echo ran >> task.hits; printf task.env"}
+tasks:
+  check:
+    dotenv: ["{{.TASK_FILE}}"]
+    cmds:
+      - cmd: echo "{{.ROOT_VALUE}}/{{.TASK_VALUE}}"
+-- root.env --
+ROOT_VALUE=root
+-- task.env --
+TASK_VALUE=task
+-- expect.stdout --
+root/task
+-- expect.hits --
+ran

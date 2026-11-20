@@ -1,0 +1,14 @@
+# A cyclic shell variable must not fall back to an environment variable.
+env CYCLIC=process
+! rivet check
+stderr 'cyclic variable'
+! exists ran
+
+-- Taskfile.yml --
+version: 42
+vars:
+  CYCLIC: {sh: "echo ran > ran; printf '{{.CYCLIC}}'"}
+tasks:
+  check:
+    cmds:
+      - cmd: echo "{{.CYCLIC}}"

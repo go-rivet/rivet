@@ -60,7 +60,7 @@ func BenchmarkV42VariableScopes(b *testing.B) {
 				}
 			})
 			task := declaration.DeepCopy()
-			taskVars, err := e.v42TaskVars(task, nil)
+			taskVars, err := e.v42TaskVars(task, nil, true)
 			if err != nil {
 				b.Fatal(err)
 			}

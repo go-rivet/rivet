@@ -1,0 +1,30 @@
+# Shell variables resolve in root, namespace, task, and task-call scopes.
+rivet start
+cmp stdout expect.stdout
+
+-- Taskfile.yml --
+version: 42
+vars:
+  ROOT_SH: {sh: "printf root"}
+tasks:
+  start:
+    vars:
+      TASK_SH: {sh: "printf task"}
+    cmds:
+      - cmd: echo "root={{.ROOT_SH}} task={{.TASK_SH}}"
+      - task: ns:check
+        vars:
+          CALL_SH: {sh: "printf call"}
+---
+version: 42
+namespace: ns
+vars:
+  NS_SH: {sh: "printf namespace"}
+tasks:
+  check:
+    cmds:
+      - cmd: echo "namespace={{.NS_SH}} root={{.:ROOT_SH}} call={{.CALL_SH}}"
+
+-- expect.stdout --
+root=root task=task
+namespace=namespace root=root call=call

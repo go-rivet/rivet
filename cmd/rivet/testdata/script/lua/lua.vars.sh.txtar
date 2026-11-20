@@ -1,0 +1,35 @@
+# Shell variables are available in Lua's task, namespace, and root tables.
+rivet start
+cmp stdout expect.stdout
+
+-- Taskfile.yml --
+version: 42
+vars:
+  ROOT_SH: {sh: "printf root"}
+tasks:
+  start:
+    cmds:
+      - task: ns:check
+        vars:
+          CALL_SH: {sh: "printf call"}
+---
+version: 42
+namespace: ns
+vars:
+  NS_SH: {sh: "printf namespace"}
+tasks:
+  check:
+    vars:
+      TASK_SH: {sh: "printf task"}
+    cmds:
+      - lua: |
+          assert(ctx.root.ROOT_SH == "root")
+          assert(ctx.vars[":ROOT_SH"] == "root")
+          assert(ctx.global.NS_SH == "namespace")
+          assert(ctx.ns.ns.NS_SH == "namespace")
+          assert(ctx.task.TASK_SH == "task")
+          assert(ctx.task.CALL_SH == "call")
+          print(ctx.vars.NS_SH, ctx.vars.TASK_SH, ctx.vars.CALL_SH)
+
+-- expect.stdout --
+namespace	task	call

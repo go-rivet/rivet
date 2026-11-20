@@ -1,0 +1,20 @@
+# Task shell variables run in the task's interpolated working directory.
+rivet check
+cmp stdout expect.stdout
+
+-- Taskfile.yml --
+version: 42
+vars:
+  FOLDER: sub
+tasks:
+  check:
+    dir: "{{.FOLDER}}"
+    vars:
+      CONTENT: {sh: "cat marker"}
+    cmds:
+      - cmd: echo "{{.CONTENT}}"
+
+-- sub/marker --
+in-task-directory
+-- expect.stdout --
+in-task-directory

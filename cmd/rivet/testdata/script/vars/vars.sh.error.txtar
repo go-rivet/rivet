@@ -1,0 +1,29 @@
+# A failed shell variable must fail the task rather than produce a value.
+! rivet check
+stderr 'shell-variable-failed'
+! stdout '^value='
+! exists ran-command
+! rivet ns:check
+stderr 'dag-shell-failed'
+! stdout '^value='
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  check:
+    vars:
+      BROKEN:
+        sh: "echo shell-variable-failed >&2; exit 1"
+    cmds:
+      - cmd: echo "value={{.BROKEN}}"
+      - cmd: echo ran > ran-command
+---
+version: 42
+namespace: ns
+vars:
+  BROKEN: {sh: "echo dag-shell-failed >&2; exit 1"}
+  INDIRECT: "{{.BROKEN}}"
+tasks:
+  check:
+    cmds:
+      - cmd: echo "value={{.INDIRECT}}"

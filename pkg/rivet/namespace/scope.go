@@ -4,6 +4,8 @@
 package namespace
 
 import (
+	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -14,6 +16,18 @@ import (
 	"github.com/go-rivet/rivet/internal/version"
 	"github.com/go-rivet/rivet/pkg/rivet/taskfile/ast"
 )
+
+type shellVariableError struct {
+	Err error
+}
+
+func (e *shellVariableError) Error() string { return e.Err.Error() }
+func (e *shellVariableError) Unwrap() error { return e.Err }
+
+var errVariableCycle = errors.New("cyclic variable reference")
+
+// ErrShellEvaluationDisabled indicates that a shell variable cannot be evaluated in a fast scope.
+var ErrShellEvaluationDisabled = errors.New("shell variable evaluation disabled")
 
 // Environment returns the process environment as a map.
 func Environment() map[string]any {
@@ -76,12 +90,15 @@ func SpecialVars(p SpecialParams, task *ast.Task) map[string]any {
 type Scope struct {
 	DAG *DAG
 	// Namespace is the node that relative references resolve against.
-	Namespace string
-	Special   map[string]any
-	Env       map[string]any
+	Namespace      string
+	LocalNamespace string
+	Special        map[string]any
+	Env            map[string]any
 	// RootEnv excludes the task's dotenv so rooted lookups bypass task values.
-	RootEnv map[string]any
-	Local   map[string]any
+	RootEnv    map[string]any
+	Local      map[string]any
+	LocalVars  map[string]ast.Var
+	EvaluateSh func(*Scope, ast.Var) (string, error)
 
 	// visiting holds the vars being rendered, to detect reference cycles.
 	visiting map[string]bool
@@ -90,26 +107,30 @@ type Scope struct {
 // Resolve returns the value of each reference that can be resolved. A
 // reference is relative to the scope's namespace ("name"), qualified
 // ("ns:name") or rooted (":name").
-func (s *Scope) Resolve(refs []string) map[string]any {
+func (s *Scope) Resolve(refs []string) (map[string]any, error) {
 	resolved := make(map[string]any, len(refs))
 	for _, ref := range refs {
-		if value, ok := s.ResolveReference(ref); ok {
+		value, ok, err := s.ResolveReference(ref)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			resolved[ref] = value
 		}
 	}
-	return resolved
+	return resolved, nil
 }
 
 // ResolveVariable resolves a variable declared at an exact DAG path.
-func (s *Scope) ResolveVariable(path, name string) (any, bool) {
-	if value, ok := s.DAG.Vars(path).Value(name); ok {
-		return s.render(path, name, value)
+func (s *Scope) ResolveVariable(path, name string) (any, bool, error) {
+	if variable, ok := s.DAG.Vars(path)[name]; ok {
+		return s.render(path, name, variable, false)
 	}
-	return nil, false
+	return nil, false, nil
 }
 
 // ResolveReference resolves one reference using the same rules as Resolve.
-func (s *Scope) ResolveReference(ref string) (any, bool) {
+func (s *Scope) ResolveReference(ref string) (any, bool, error) {
 	path, name, belowRoot := s.Namespace, ref, true
 	relative := true
 	if i := strings.LastIndex(ref, ast.NamespaceSeparator); i >= 0 {
@@ -119,24 +140,39 @@ func (s *Scope) ResolveReference(ref string) (any, bool) {
 	}
 	if relative {
 		if value, ok := s.Local[name]; ok {
-			return value, true
+			return value, true, nil
+		}
+		if variable, ok := s.LocalVars[name]; ok {
+			return s.render(s.LocalNamespace, name, variable, true)
 		}
 	}
-	if value, ok := s.DAG.Vars(path).Value(name); ok {
-		return s.render(path, name, value)
+	if _, ok := s.DAG.Vars(path)[name]; ok {
+		return s.ResolveVariable(path, name)
 	}
 	if !belowRoot {
-		return nil, false
+		return nil, false, nil
 	}
 	if value, ok := s.Special[name]; ok {
-		return value, true
+		return value, true, nil
 	}
 	env := s.Env
 	if !relative && s.RootEnv != nil {
 		env = s.RootEnv
 	}
 	value, ok := env[name]
-	return value, ok
+	return value, ok, nil
+}
+
+// ResolveLocal resolves a task or call variable independently of its order.
+func (s *Scope) ResolveLocal(name string) (any, bool, error) {
+	if value, ok := s.Local[name]; ok {
+		return value, true, nil
+	}
+	variable, ok := s.LocalVars[name]
+	if !ok {
+		return nil, false, nil
+	}
+	return s.render(s.LocalNamespace, name, variable, true)
 }
 
 // Render expands templates in text, relative to the scope's namespace.
@@ -151,24 +187,61 @@ func (s *Scope) Render(text string) (string, error) {
 
 // render expands templates in a var value. The value is evaluated on demand,
 // relative to the node that declares it.
-func (s *Scope) render(path, name string, value any) (any, bool) {
-	text, ok := value.(string)
-	if !ok || !strings.Contains(text, "{{") {
-		return value, true
+func (s *Scope) render(path, name string, variable ast.Var, local bool) (any, bool, error) {
+	if variable.Sh != nil && s.EvaluateSh == nil {
+		return nil, false, ErrShellEvaluationDisabled
+	}
+	if variable.Sh == nil && variable.Ref == "" {
+		if variable.Live != nil {
+			return variable.Live, true, nil
+		}
+		text, isString := variable.Value.(string)
+		if (isString && !strings.Contains(text, "{{")) || (!local && !isString) {
+			return variable.Value, true, nil
+		}
 	}
 	key := path + ast.NamespaceSeparator + name
+	if local {
+		key = "local:" + key
+	}
 	if s.visiting[key] {
-		return nil, false
+		return nil, false, fmt.Errorf("task: %w: %q", errVariableCycle, key)
 	}
 	visiting := map[string]bool{key: true}
 	maps.Copy(visiting, s.visiting)
-	node := &Scope{DAG: s.DAG, Namespace: path, Special: s.Special, Env: s.Env, RootEnv: s.RootEnv, Local: s.Local, visiting: visiting}
-	cache := &templater.Cache{Vars: ast.NewVars(), Namespaced: node.Resolve}
-	rendered := templater.Replace(text, cache)
-	if cache.Err() != nil {
-		return nil, false
+	node := *s
+	node.Namespace = path
+	node.visiting = visiting
+	base := ast.NewVars()
+	for k, v := range s.Env {
+		base.Set(k, ast.Var{Value: v})
 	}
-	return rendered, true
+	for k, v := range s.Special {
+		base.Set(k, ast.Var{Value: v})
+	}
+	for k, v := range s.Local {
+		base.Set(k, ast.Var{Value: v})
+	}
+	cache := &templater.Cache{Vars: base, Namespaced: node.Resolve}
+	resolved := templater.ReplaceVar(variable, cache)
+	if err := cache.Err(); err != nil {
+		var shellErr *shellVariableError
+		if local || variable.Sh != nil || errors.As(err, &shellErr) || errors.Is(err, errVariableCycle) || errors.Is(err, ErrShellEvaluationDisabled) {
+			return nil, false, err
+		}
+		return nil, false, nil
+	}
+	if resolved.Sh != nil {
+		value, err := s.EvaluateSh(&node, resolved)
+		if err != nil {
+			return nil, false, &shellVariableError{Err: fmt.Errorf("task: shell variable %q: %w", key, err)}
+		}
+		return value, true, nil
+	}
+	if resolved.Live != nil {
+		return resolved.Live, true, nil
+	}
+	return resolved.Value, true, nil
 }
 
 func localName(task *ast.Task) string {

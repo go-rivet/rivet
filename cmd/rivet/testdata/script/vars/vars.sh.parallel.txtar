@@ -1,0 +1,20 @@
+# Concurrent tasks reuse the same shell command result.
+rivet --parallel first second
+cmp hits expect.hits
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  first:
+    vars:
+      VALUE: {sh: "echo ran >> hits; printf cached"}
+    cmds:
+      - cmd: '[ "{{.VALUE}}" = cached ]'
+  second:
+    vars:
+      VALUE: {sh: "echo ran >> hits; printf cached"}
+    cmds:
+      - cmd: '[ "{{.VALUE}}" = cached ]'
+
+-- expect.hits --
+ran
