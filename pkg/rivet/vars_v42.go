@@ -122,10 +122,20 @@ func (e *Executor) v42Scope(t *ast.Task, call *Call, evaluateShVars bool) (*name
 	env := maps.Clone(base)
 	scope := e.scope(t, call, env)
 	scope.RootEnv = base
-	if evaluateShVars {
-		e.enableScopeShell(scope, t)
+	pathScope := *scope
+	pathScope.LocalVars = make(map[string]ast.Var)
+	for name, variable := range e.taskVarDeclarations(t).All() {
+		pathScope.LocalVars[name] = variable
 	}
-	dotenv, err := namespace.LoadDotenv(filepathext.SmartJoin(e.Dir, t.Dir), t.Dotenv, scope.Render)
+	if call != nil {
+		for name, variable := range call.Vars.All() {
+			pathScope.LocalVars[name] = variable
+		}
+	}
+	if evaluateShVars {
+		e.enableScopeShell(&pathScope, t)
+	}
+	dotenv, err := namespace.LoadDotenv(filepathext.SmartJoin(e.Dir, t.Dir), t.Dotenv, pathScope.Render)
 	if err != nil {
 		if !evaluateShVars && errors.Is(err, namespace.ErrShellEvaluationDisabled) {
 			return scope, nil, nil

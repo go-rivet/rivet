@@ -1,0 +1,47 @@
+# POSIX and Bash options apply at the Taskfile, task, and command levels.
+rivet -t global.yml pipefail
+stdout 'pipefail[[:space:]]+on'
+rivet -t global.yml globstar
+stdout 'globstar[[:space:]]+on'
+rivet -t task.yml pipefail
+stdout 'pipefail[[:space:]]+on'
+rivet -t task.yml globstar
+stdout 'globstar[[:space:]]+on'
+rivet -t command.yml pipefail
+stdout 'pipefail[[:space:]]+on'
+rivet -t command.yml globstar
+stdout 'globstar[[:space:]]+on'
+
+-- global.yml --
+version: 42
+set: [pipefail]
+shopt: [globstar]
+tasks:
+  pipefail:
+    cmds:
+      - set -o | grep pipefail
+  globstar:
+    cmds:
+      - shopt | grep globstar
+-- task.yml --
+version: 42
+tasks:
+  pipefail:
+    set: [pipefail]
+    cmds:
+      - set -o | grep pipefail
+  globstar:
+    shopt: [globstar]
+    cmds:
+      - shopt | grep globstar
+-- command.yml --
+version: 42
+tasks:
+  pipefail:
+    cmds:
+      - cmd: set -o | grep pipefail
+        set: [pipefail]
+  globstar:
+    cmds:
+      - cmd: shopt | grep globstar
+        shopt: [globstar]

@@ -1,0 +1,15 @@
+# Invalid dotenv files fail with their path rather than running the task.
+! rivet check
+stderr 'error reading env file .*bad.env'
+! exists ran
+
+-- Taskfile.yml --
+version: 42
+dotenv: [bad.env]
+tasks:
+  check:
+    cmds:
+      - cmd: echo ran > ran
+-- bad.env --
+# intentional parse error
+SOME_VAR

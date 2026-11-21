@@ -3,11 +3,18 @@
 rivet s
 cmpenv stdout expect.root
 
+# A task's explicit directory is reflected in TASK_DIR.
+rivet workdir
+cmpenv stdout expect.dir.root
+
 # Test: task special vars with namespace 
 mkdir foo 
 cd foo 
 rivet ns:ns_s
 cmpenv stdout ../expect.ns
+
+rivet ns:workdir
+cmpenv stdout ../expect.dir.ns
 
 # Test: task special vars overridden by namespace vars
 rivet over:override
@@ -25,6 +32,10 @@ tasks:
       - cmd: echo "task = {{.TASK}}"
       - cmd: echo "taskname = {{.TASKNAME}}"
       - cmd: echo "task_dir = {{.TASK_DIR}}"
+  workdir:
+    dir: sub
+    cmds:
+      - cmd: echo "task_dir = {{.TASK_DIR}}"
       
 -- foo/Taskfile.yml --
 ---
@@ -38,6 +49,10 @@ tasks:
       - cmd: echo "namespace = {{.NAMESPACE}}"
       - cmd: echo "task = {{.TASK}}"
       - cmd: echo "taskname = {{.TASKNAME}}"
+      - cmd: echo "task_dir = {{.TASK_DIR}}"
+  workdir:
+    dir: sub
+    cmds:
       - cmd: echo "task_dir = {{.TASK_DIR}}"
 
 -- bar/Taskfile.yml --
@@ -78,9 +93,15 @@ namespace = ns
 task = ns:special
 taskname = special
 task_dir = $WORK/foo
+-- expect.dir.root --
+task_dir = $WORK/sub
+-- expect.dir.ns --
+task_dir = $WORK/foo/sub
 -- expect.override --
 alias = some_alias
 namespace = some_namespace
 task = some_task
 taskname = some_taskname
 task_dir = some_taskdir
+-- sub/.keep --
+-- foo/sub/.keep --

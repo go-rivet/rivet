@@ -1,0 +1,26 @@
+# Scalar and sequence tasks work both as calls and as dependencies.
+rivet
+cmp stdout expect.stdout
+exists dependency.txt
+cmp dependency.txt expect.dependency
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  default:
+    deps:
+      - task: dependency
+    cmds:
+      - task: sequence
+      - task: scalar
+  dependency: echo dependency > dependency.txt
+  sequence:
+    - echo first
+    - echo second
+  scalar: echo third
+-- expect.stdout --
+first
+second
+third
+-- expect.dependency --
+dependency

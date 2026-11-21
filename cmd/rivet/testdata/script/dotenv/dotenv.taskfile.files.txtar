@@ -1,0 +1,25 @@
+# Root dotenv paths can use root and process variables. Missing files are
+# skipped, and the first file wins when multiple files define the same key.
+env RIVET_TEST_SUFFIX=environment
+rivet check
+cmp stdout expect.stdout
+
+-- Taskfile.yml --
+version: 42
+vars:
+  RIVET_TEST_PREFIX: first
+  RIVET_TEST_FILE: "{{.RIVET_TEST_PREFIX}}.env"
+dotenv: ["{{.RIVET_TEST_FILE}}", missing.env, second.env, "{{.RIVET_TEST_SUFFIX}}.env"]
+tasks:
+  check:
+    cmds:
+      - cmd: echo "{{.RIVET_TEST_A}}/{{.RIVET_TEST_B}}/{{.RIVET_TEST_C}}"
+-- first.env --
+RIVET_TEST_A=first
+-- second.env --
+RIVET_TEST_A=second
+RIVET_TEST_B=second
+-- environment.env --
+RIVET_TEST_C=environment
+-- expect.stdout --
+first/second/environment

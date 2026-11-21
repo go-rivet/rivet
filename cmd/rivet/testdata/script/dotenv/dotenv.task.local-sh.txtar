@@ -1,0 +1,46 @@
+# A shell-valued local filename is evaluated on demand and cached.
+rivet --list-all
+! exists hits
+rivet start
+cmp stdout expect.stdout
+cmp hits expect.hits
+
+! rivet broken
+stderr 'filename-command-failed'
+! exists ran
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  start:
+    cmds:
+      - task: check
+      - task: check
+        vars: {RIVET_TEST_PREFIX: call}
+      - task: check
+        vars: {RIVET_TEST_PREFIX: call}
+  check:
+    vars:
+      RIVET_TEST_PREFIX: local
+      RIVET_TEST_FILE:
+        sh: "echo {{.RIVET_TEST_PREFIX}} >> hits; printf '{{.RIVET_TEST_PREFIX}}.env'"
+    dotenv: ["{{.RIVET_TEST_FILE}}"]
+    cmds:
+      - cmd: echo "{{.RIVET_TEST_FILE}}={{.RIVET_TEST_VALUE}}"
+  broken:
+    vars:
+      RIVET_TEST_FILE: {sh: "echo filename-command-failed >&2; exit 1"}
+    dotenv: ["{{.RIVET_TEST_FILE}}"]
+    cmds:
+      - cmd: echo ran > ran
+-- local.env --
+RIVET_TEST_VALUE=local
+-- call.env --
+RIVET_TEST_VALUE=call
+-- expect.stdout --
+local.env=local
+call.env=call
+call.env=call
+-- expect.hits --
+local
+call

@@ -15,6 +15,10 @@ cmp stdout expect.command
 rivet dependency-values
 cmp stdout expect.dependency
 
+# Task-call variables can use template functions on caller variables.
+rivet transformed-call
+cmp stdout expect.transformed
+
 -- Taskfile.yml --
 ---
 version: 42
@@ -45,6 +49,16 @@ tasks:
           FOO: dependency
           EMPTY: ""
           FLAG: false
+  transformed-call:
+    vars:
+      TEXT: "hello world"
+    cmds:
+      - task: print-value
+        vars:
+          VALUE: '{{.TEXT | replace "world" "rivet"}}'
+  print-value:
+    cmds:
+      - cmd: echo "{{.VALUE}}"
   values:
     vars:
       FOO: default
@@ -85,3 +99,5 @@ foo=default derived=default-derived empty=[default] flag=true
 foo=command derived=command-derived empty=[] flag=false
 -- expect.dependency --
 foo=dependency derived=dependency-derived empty=[] flag=false
+-- expect.transformed --
+hello rivet

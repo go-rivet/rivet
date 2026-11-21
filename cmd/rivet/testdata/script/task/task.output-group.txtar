@@ -1,0 +1,45 @@
+# Group markers wrap output for dependencies and commands.
+rivet -t group.yml bye
+cmp stdout expect.group
+
+# Error-only grouping hides successful output but displays failed output.
+rivet -t error-only.yml passing
+cmp stdout empty
+! rivet -t error-only.yml failing
+stdout 'failing-output'
+! stdout '^passing-output$'
+
+-- group.yml --
+version: 42
+output:
+  group:
+    begin: '::group::{{.TASK}}'
+    end: '::endgroup::'
+tasks:
+  hello:
+    cmds:
+      - echo Hello
+  bye:
+    deps:
+      - task: hello
+    cmds:
+      - echo Bye
+-- error-only.yml --
+version: 42
+output:
+  group:
+    error_only: true
+tasks:
+  passing: echo passing-output
+  failing:
+    cmds:
+      - task: passing
+      - echo failing-output && exit 1
+-- expect.group --
+::group::hello
+Hello
+::endgroup::
+::group::bye
+Bye
+::endgroup::
+-- empty --

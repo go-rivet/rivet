@@ -1,0 +1,13 @@
+# Dry-run prints the shell command without executing it.
+rivet --dry -v write
+stderr 'touch result.txt'
+! exists result.txt
+rivet write
+exists result.txt
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  write:
+    cmds:
+      - touch result.txt

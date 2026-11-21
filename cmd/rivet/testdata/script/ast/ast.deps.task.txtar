@@ -5,11 +5,14 @@ stdout 'dep b'
 stdout 'dep b v1'
 stdout 'dep for x'
 stdout 'dep for y'
+stdout -count=1 'dep for hello dependency'
 
 -- Taskfile.yml --
 version: 42
 tasks:
   default:
+    vars:
+      TEXT: hello world
     deps:
       - task: a
       - task: b
@@ -21,6 +24,9 @@ tasks:
       - task: c
         vars:
           I: y
+      - task: c
+        vars:
+          I: '{{.TEXT | replace "world" "dependency"}}'
   a:
     cmd: echo dep a
   b:

@@ -1,0 +1,17 @@
+# Quoted arguments passed as a task-call variable remain grouped when split.
+rivet start
+cmp stdout expect.stdout
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  start:
+    cmds:
+      - task: check
+        vars:
+          CLI_ARGS: "foo bar 'foo bar baz'"
+  check:
+    cmds:
+      - cmd: echo '{{splitArgs .CLI_ARGS | len}}'
+-- expect.stdout --
+3

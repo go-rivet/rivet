@@ -1,0 +1,83 @@
+# Task and call variables select task dotenv files.
+env RIVET_TEST_FILE=environment.env
+rivet start
+cmp stdout expect.stdout
+
+# Local variable cycles and missing references must fail before commands run.
+! rivet cycle
+stderr 'cyclic variable'
+! rivet missing
+stderr 'RIVET_TEST_MISSING'
+! exists ran
+
+-- Taskfile.yml --
+version: 42
+vars:
+  RIVET_TEST_FILE: root.env
+  RIVET_TEST_SUFFIX: root
+tasks:
+  start:
+    cmds:
+      - task: load
+      - task: load
+        vars:
+          RIVET_TEST_PREFIX: call
+      - task: ns:load
+      - task: in-directory
+  load:
+    vars:
+      RIVET_TEST_PREFIX: local
+      RIVET_TEST_FILE: "{{.RIVET_TEST_PREFIX}}.env"
+      RIVET_TEST_RESULT: "{{.RIVET_TEST_VALUE}}"
+    dotenv: ["{{.RIVET_TEST_FILE}}"]
+    cmds:
+      - cmd: echo "{{.RIVET_TEST_FILE}}={{.RIVET_TEST_RESULT}}"
+  cycle:
+    vars:
+      RIVET_TEST_FILE: "{{.RIVET_TEST_OTHER}}"
+      RIVET_TEST_OTHER: "{{.RIVET_TEST_FILE}}"
+    dotenv: ["{{.RIVET_TEST_FILE}}"]
+    cmds:
+      - cmd: echo ran > ran
+  missing:
+    vars:
+      RIVET_TEST_FILE: "{{.RIVET_TEST_MISSING}}"
+    dotenv: ["{{.RIVET_TEST_FILE}}"]
+    cmds:
+      - cmd: echo ran > ran
+  in-directory:
+    dir: sub
+    vars:
+      RIVET_TEST_FILE: local.env
+    dotenv: ["{{.RIVET_TEST_FILE}}"]
+    cmds:
+      - cmd: echo "{{.RIVET_TEST_FILE}}={{.RIVET_TEST_VALUE}}"
+---
+version: 42
+namespace: ns
+vars:
+  RIVET_TEST_PREFIX: namespace
+tasks:
+  load:
+    vars:
+      RIVET_TEST_FILE: "{{.RIVET_TEST_PREFIX}}-{{.:RIVET_TEST_SUFFIX}}.env"
+    dotenv: ["{{.RIVET_TEST_FILE}}"]
+    cmds:
+      - cmd: echo "{{.RIVET_TEST_FILE}}={{.RIVET_TEST_VALUE}}"
+-- local.env --
+RIVET_TEST_VALUE=local
+-- call.env --
+RIVET_TEST_VALUE=call
+-- namespace-root.env --
+RIVET_TEST_VALUE=namespace
+-- root.env --
+RIVET_TEST_VALUE=root
+-- environment.env --
+RIVET_TEST_VALUE=environment
+-- sub/local.env --
+RIVET_TEST_VALUE=subdirectory
+-- expect.stdout --
+local.env=local
+call.env=call
+namespace-root.env=namespace
+local.env=subdirectory

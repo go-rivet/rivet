@@ -519,12 +519,42 @@ func (e *Executor) runDeferred(taskCtx context.Context, t *ast.Task, call *Call,
 		extra["EXIT_CODE"] = fmt.Sprintf("%d", *deferredExitCode)
 	}
 
+	exitCode, overrideExitCode := extra["EXIT_CODE"]
+	if resolve := cache.Namespaced; resolve != nil {
+		cache.Namespaced = func(refs []string) (map[string]any, error) {
+			hasExitCode := slices.Contains(refs, "EXIT_CODE")
+			if hasExitCode && overrideExitCode {
+				refs = slices.DeleteFunc(slices.Clone(refs), func(ref string) bool {
+					return ref == "EXIT_CODE"
+				})
+			}
+			values, err := resolve(refs)
+			if err != nil {
+				return nil, err
+			}
+			if hasExitCode {
+				if overrideExitCode {
+					values["EXIT_CODE"] = exitCode
+				} else if _, ok := values["EXIT_CODE"]; !ok {
+					if _, ok := vars.Get("EXIT_CODE"); !ok {
+						values["EXIT_CODE"] = ""
+					}
+				}
+			}
+			return values, nil
+		}
+	}
+
 	cmd.Cmd = templater.ReplaceWithExtra(cmd.Cmd, cache, extra)
 	cmd.Lua = templater.ReplaceWithExtra(cmd.Lua, cache, extra)
 	cmd.Task = templater.ReplaceWithExtra(cmd.Task, cache, extra)
 	cmd.If = templater.ReplaceWithExtra(cmd.If, cache, extra)
 	cmd.Vars = templater.ReplaceVarsWithExtra(cmd.Vars, cache, extra)
 
+	if err := cache.Err(); err != nil {
+		rlog.Errorf(ctx, "task: unable to resolve deferred command: %v\n", err)
+		return
+	}
 	if err := e.runCommand(ctx, t, call, i, taskEnv); err != nil {
 		rlog.Debugf(ctx, "task: ignored error in deferred cmd: %s\n", err.Error())
 	}

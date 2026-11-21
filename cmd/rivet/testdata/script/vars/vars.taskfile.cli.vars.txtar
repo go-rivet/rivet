@@ -7,6 +7,12 @@ cmp stdout expect.cli
 rivet ns:override FOO=c_foo
 cmp stdout expect.override
 
+# Task vars override root and CLI values; rooted lookups retain the CLI value.
+rivet task-override
+cmp stdout expect.task-default
+rivet task-override FOO=c_foo
+cmp stdout expect.task-cli
+
 -- Taskfile.yml --
 ---
 version: 42
@@ -18,6 +24,12 @@ tasks:
     cmds:
       - cmd: echo "foo = {{.FOO}}"
       - cmd: echo "bar = {{.BAR}}"
+  task-override:
+    vars:
+      FOO: t_foo
+    cmds:
+      - cmd: echo "task = {{.FOO}}"
+      - cmd: echo "root = {{.:FOO}}"
       
 -- ns/Taskfile.yml --
 ---
@@ -42,3 +54,9 @@ foo = ns_foo
 bar = ns_bar
 g_foo = c_foo
 g_bar = g_bar
+-- expect.task-default --
+task = t_foo
+root = g_foo
+-- expect.task-cli --
+task = t_foo
+root = c_foo

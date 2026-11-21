@@ -1,0 +1,35 @@
+# Task dotenv values are isolated to the task and respect variable precedence.
+env RIVET_TEST_ISOLATED=process RIVET_TEST_COLLISION=process
+rivet start
+cmp stdout expect.stdout
+
+-- Taskfile.yml --
+version: 42
+vars:
+  RIVET_TEST_COLLISION: global
+tasks:
+  start:
+    cmds:
+      - task: with-dotenv
+      - task: without-dotenv
+      - task: task-override
+  with-dotenv:
+    dotenv: [.task.env]
+    cmds:
+      - cmd: 'echo "with={{.RIVET_TEST_ISOLATED}}/{{.RIVET_TEST_COLLISION}} shell=$RIVET_TEST_ISOLATED/$RIVET_TEST_COLLISION"'
+  without-dotenv:
+    cmds:
+      - cmd: 'echo "without={{.RIVET_TEST_ISOLATED}}/{{.RIVET_TEST_COLLISION}} shell=$RIVET_TEST_ISOLATED/$RIVET_TEST_COLLISION"'
+  task-override:
+    dotenv: [.task.env]
+    vars:
+      RIVET_TEST_COLLISION: task
+    cmds:
+      - cmd: 'echo "task={{.RIVET_TEST_COLLISION}} shell=$RIVET_TEST_COLLISION"'
+-- .task.env --
+RIVET_TEST_ISOLATED=dotenv
+RIVET_TEST_COLLISION=dotenv
+-- expect.stdout --
+with=dotenv/global shell=dotenv/global
+without=process/global shell=process/global
+task=task shell=task

@@ -1,0 +1,32 @@
+# Task-level and command-level ignore_error continue after a shell failure.
+rivet task-ignored
+stdout '^task continued$'
+rivet command-ignored
+stdout '^command continued$'
+
+! rivet task-failed
+! stdout '^unexpected$'
+! rivet command-failed
+! stdout '^unexpected$'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  task-ignored:
+    ignore_error: true
+    cmds:
+      - exit 1
+      - echo task continued
+  command-ignored:
+    cmds:
+      - cmd: exit 1
+        ignore_error: true
+      - echo command continued
+  task-failed:
+    cmds:
+      - exit 1
+      - echo unexpected
+  command-failed:
+    cmds:
+      - cmd: exit 1
+      - echo unexpected

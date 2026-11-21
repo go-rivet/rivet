@@ -1,0 +1,40 @@
+# Deferred commands run in reverse order even after a failure.
+! rivet failure
+cmp stdout expect.failure
+
+# Deferred task calls receive the caller's variables.
+rivet parent
+cmp stdout expect.parent
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  failure:
+    cmds:
+      - defer: {task: child, vars: {MESSAGE: first}}
+      - defer: {task: child, vars: {MESSAGE: second}}
+      - defer: echo third
+      - defer: echo fourth && exit 2
+      - echo body
+      - exit 1
+  parent:
+    vars:
+      MESSAGE: parent
+    cmds:
+      - defer:
+          task: child
+          vars: {MESSAGE: "deferred-{{.MESSAGE}}"}
+      - task: child
+        vars: {MESSAGE: "immediate-{{.MESSAGE}}"}
+  child:
+    cmds:
+      - cmd: echo "{{.MESSAGE}}"
+-- expect.failure --
+body
+fourth
+third
+second
+first
+-- expect.parent --
+immediate-parent
+deferred-parent

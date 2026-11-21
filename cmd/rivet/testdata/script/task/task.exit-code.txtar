@@ -1,0 +1,49 @@
+# Deferred commands see an empty EXIT_CODE after success and the exit code
+# after failure, together with static and shell-valued task variables.
+[linux] exec env -u EXIT_CODE rivet success
+[linux] cmp stdout expect.success
+env EXIT_CODE=
+rivet success
+cmp stdout expect.success
+! rivet failure
+cmp stdout expect.failure
+env EXIT_CODE=process
+rivet success
+cmp stdout expect.process
+! rivet failure
+cmp stdout expect.failure
+
+# An unresolved deferred template is reported, not executed.
+rivet invalid
+stderr 'unable to resolve deferred command.*RIVET_TEST_MISSING'
+! exists ran
+
+-- Taskfile.yml --
+version: 42
+vars:
+  PREFIX: EXIT_CODE=
+tasks:
+  success:
+    vars:
+      FOO: bar
+      DYNAMIC_FOO: {sh: "echo bar"}
+    cmds:
+      - defer: echo "FOO={{.FOO}} DYNAMIC_FOO={{.DYNAMIC_FOO}} {{.PREFIX}}{{.EXIT_CODE}}"
+      - exit 0
+  failure:
+    vars:
+      FOO: bar
+      DYNAMIC_FOO: {sh: "echo bar"}
+      EXIT_CODE: task
+    cmds:
+      - defer: echo "FOO={{.FOO}} DYNAMIC_FOO={{.DYNAMIC_FOO}} {{.PREFIX}}{{.EXIT_CODE}}"
+      - exit 1
+  invalid:
+    cmds:
+      - defer: echo "{{.RIVET_TEST_MISSING}}" > ran
+-- expect.success --
+FOO=bar DYNAMIC_FOO=bar EXIT_CODE=
+-- expect.failure --
+FOO=bar DYNAMIC_FOO=bar EXIT_CODE=1
+-- expect.process --
+FOO=bar DYNAMIC_FOO=bar EXIT_CODE=process

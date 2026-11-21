@@ -1,0 +1,38 @@
+# Internal root and namespace tasks can be called or depended on indirectly.
+rivet via-command
+cmp stdout expect.command
+rivet via-dependency
+stdout -count=1 '^root internal$'
+stdout -count=1 '^namespace internal$'
+
+! rivet hidden
+! stdout '^root internal$'
+! rivet ns:hidden
+! stdout '^namespace internal$'
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  via-command:
+    cmds:
+      - task: hidden
+      - task: ns:hidden
+  via-dependency:
+    deps:
+      - task: hidden
+      - task: ns:hidden
+  hidden:
+    internal: true
+    cmds:
+      - echo root internal
+---
+version: 42
+namespace: ns
+tasks:
+  hidden:
+    internal: true
+    cmds:
+      - echo namespace internal
+-- expect.command --
+root internal
+namespace internal

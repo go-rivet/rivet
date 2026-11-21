@@ -1,0 +1,30 @@
+# Summaries describe multiple tasks without running them or their dependencies.
+rivet --summary first second
+stdout 'task: first'
+stdout 'first summary'
+stdout 'first second line'
+stdout 'task: second'
+stdout 'second summary'
+stdout 'dependencies:'
+stdout ' - dependency'
+stdout 'commands:'
+! exists ran
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  first:
+    summary: |
+      first summary
+      first second line
+    deps:
+      - task: dependency
+    cmds:
+      - echo ran > ran
+  second:
+    summary: second summary
+    cmds:
+      - echo ran > ran
+  dependency:
+    cmds:
+      - echo ran > ran

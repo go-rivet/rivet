@@ -1,0 +1,53 @@
+# Platform restrictions apply to tasks, commands, and dependencies.
+[linux] rivet linux
+[linux] cmp stdout expect.linux
+[linux] rivet windows
+[linux] cmp stdout empty
+[linux] rivet mixed
+[linux] cmp stdout expect.linux
+
+[windows] rivet windows
+[windows] cmp stdout expect.windows
+[windows] rivet linux
+[windows] cmp stdout empty
+[windows] rivet mixed
+[windows] cmp stdout expect.windows
+
+-- Taskfile.yml --
+version: 42
+tasks:
+  linux:
+    platforms: [linux]
+    deps:
+      - task: windows-failure
+    cmds:
+      - echo linux
+  windows:
+    platforms: [windows]
+    deps:
+      - task: linux-failure
+    cmds:
+      - echo windows
+  mixed:
+    cmds:
+      - cmd: echo linux
+        platforms: [linux]
+      - cmd: echo windows
+        platforms: [windows]
+  linux-failure:
+    platforms: [linux]
+    vars:
+      UNEXPECTED: {sh: exit 1}
+    cmds:
+      - echo "{{.UNEXPECTED}}"
+  windows-failure:
+    platforms: [windows]
+    vars:
+      UNEXPECTED: {sh: exit 1}
+    cmds:
+      - echo "{{.UNEXPECTED}}"
+-- expect.linux --
+linux
+-- expect.windows --
+windows
+-- empty --
