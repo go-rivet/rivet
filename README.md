@@ -41,7 +41,7 @@ tasks:
 
 ## Installation
 
-* **Go Install:** `go install ://github.com`
+* **Go Install:** `go install github.com/go-rivet/rivet/cmd/rivet@latest`
 * **Automated Script (Linux):** `curl -sSL https://raw.githubusercontent.com/go-rivet/rivet/main/install.sh | sh`
 * **Prebuilt Binaries:** Available for Linux and Windows on [GitHub Releases](https://github.com/go-rivet/rivet/releases).
 * **Docker:** Pull from `ghcr.io/go-rivet/rivet:latest` or `ghcr.io/go-rivet/rivet:latest-alpine`.
